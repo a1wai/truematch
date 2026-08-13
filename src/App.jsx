@@ -259,7 +259,7 @@ export default function App() {
 
   if (session.stage === 'loading') {
     return (
-      <div className="grid h-dvh place-items-center bg-tm-bg">
+      <div className="grid h-full place-items-center bg-tm-bg">
         <Heart
           className="h-10 w-10 fill-tm-rose text-tm-rose"
           style={{ animation: 'heartbeat 2.6s ease-in-out infinite' }}
@@ -289,7 +289,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-tm-bg">
+    <div className="flex h-full flex-col overflow-hidden bg-tm-bg">
       <div className="flex min-h-0 flex-1">
         <Sidebar
           profile={profile}
