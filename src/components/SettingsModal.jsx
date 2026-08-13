@@ -14,6 +14,7 @@ import {
   RefreshCw,
   RotateCcw,
   Server,
+  Sparkles,
   Trash2,
   TriangleAlert,
   Wifi,
@@ -52,7 +53,15 @@ function Toggle({ checked, onChange, label, hint }) {
   )
 }
 
-export default function SettingsModal({ open, settings, onChange, onClose, onResetDemo, onWipe }) {
+export default function SettingsModal({
+  open,
+  settings,
+  onChange,
+  onClose,
+  onResetDemo,
+  onLoadSample,
+  onWipe,
+}) {
   const [showKey, setShowKey] = useState(false)
   const [showCloudKey, setShowCloudKey] = useState(false)
   const [testState, setTestState] = useState({ status: 'idle' })
@@ -119,8 +128,8 @@ export default function SettingsModal({ open, settings, onChange, onClose, onRes
                 <Bot className="h-4.5 w-4.5" />
               </span>
               <div className="min-w-0 flex-1">
-                <h2 className="text-[15px] font-semibold text-tm-text">AI engine settings</h2>
-                <p className="text-xs text-tm-muted">Open-source models, your key, your device</p>
+                <h2 className="text-[15px] font-semibold text-tm-text">Settings</h2>
+                <p className="text-xs text-tm-muted">Sync, language and the AI engine</p>
               </div>
               <button
                 onClick={onClose}
@@ -399,7 +408,7 @@ export default function SettingsModal({ open, settings, onChange, onClose, onRes
                   checked={settings.simulateReplies}
                   onChange={(v) => onChange({ ...settings, simulateReplies: v })}
                   label="Simulate the other side"
-                  hint="After you send a message, the other account types and answers on its own so a solo demo still feels like a conversation."
+                  hint="Only used when sync is off. The other account types and answers on its own so a solo demo still feels like a conversation."
                 />
                 <Toggle
                   checked={settings.stealthMode}
@@ -421,18 +430,28 @@ export default function SettingsModal({ open, settings, onChange, onClose, onRes
               {/* Danger zone */}
               <div>
                 <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-tm-muted">
-                  <Cpu className="h-3.5 w-3.5" /> Local data
+                  <Cpu className="h-3.5 w-3.5" /> Conversations
+                </p>
+                <p className="mb-2.5 text-[11.5px] leading-relaxed text-tm-muted">
+                  Chats start empty. Load the sample thread if you want something for the scanner to
+                  chew on before you have built up real history.
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <button
-                    onClick={onResetDemo}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2.5 text-[12.5px] font-medium text-tm-muted transition hover:text-tm-text"
+                    onClick={onLoadSample}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-tm-rose/30 bg-tm-rose/10 px-3 py-3 text-[12.5px] font-medium text-tm-rose-bright transition active:scale-[0.98] hover:bg-tm-rose/20"
                   >
-                    <RotateCcw className="h-4 w-4" /> Reset demo conversation
+                    <Sparkles className="h-4 w-4" /> Load sample conversation
+                  </button>
+                  <button
+                    onClick={onResetDemo}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-3 text-[12.5px] font-medium text-tm-muted transition hover:text-tm-text"
+                  >
+                    <RotateCcw className="h-4 w-4" /> Clear all chats
                   </button>
                   <button
                     onClick={onWipe}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-[12.5px] font-medium text-rose-300 transition hover:bg-rose-500/20"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-3 text-[12.5px] font-medium text-rose-300 transition hover:bg-rose-500/20 sm:col-span-2"
                   >
                     <Trash2 className="h-4 w-4" /> Erase everything
                   </button>

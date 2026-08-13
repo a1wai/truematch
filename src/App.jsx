@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import confetti from 'canvas-confetti'
 import { OTHER, USERS } from './data/seed.js'
+import { COMPANION } from './lib/companion.js'
+import { useAiChat } from './lib/use-ai-chat.js'
 import { analyzeConversation, TIMEFRAMES } from './lib/analysis.js'
 import { runLiveAnalysis, simplifyReport } from './lib/ai.js'
 import { resolveLanguage } from './lib/languages.js'
@@ -8,6 +10,7 @@ import { buildPlainSummary } from './lib/report.js'
 import { useChat } from './lib/use-chat.js'
 import {
   loadReports,
+  loadSampleConversation,
   loadSession,
   loadSettings,
   resetDemo,
@@ -43,13 +46,20 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [focusMessageId, setFocusMessageId] = useState(null)
   const [injectedDraft, setInjectedDraft] = useState(null)
-  const [mobilePane, setMobilePane] = useState('chat')
+  const [mobilePane, setMobilePane] = useState('list')
+  const [activeChat, setActiveChat] = useState('partner')
 
   const viewingAs = session.viewingAs
   const partnerId = viewingAs ? OTHER[viewingAs] : null
 
   const chat = useChat({ settings, userId: viewingAs })
   const { messages } = chat
+  const ai = useAiChat({
+    settings,
+    userId: viewingAs,
+    userName: viewingAs ? USERS[viewingAs].name : '',
+  })
+  const onAiChat = activeChat === 'ai'
 
   // Stealth mode is the single source of truth for whether the chat feed shows
   // flag markers, so the report footer and the settings toggle cannot disagree.
@@ -76,7 +86,16 @@ export default function App() {
 
   /* ---------------------------------------------------------------- */
 
-  const handleLogin = (userId) => setSession({ userId, viewingAs: userId })
+  const handleLogin = (userId) => {
+    setSession({ userId, viewingAs: userId })
+    setMobilePane('list')
+    setActiveChat('partner')
+  }
+
+  const openChat = (id) => {
+    setActiveChat(id)
+    setMobilePane('chat')
+  }
 
   const closeReport = () => {
     setScanOpen(false)
@@ -225,6 +244,7 @@ export default function App() {
 
   const handleJump = (messageId) => {
     closeReport()
+    setActiveChat('partner')
     setMobilePane('chat')
     setFocusMessageId(messageId)
     later(() => setFocusMessageId(null), 2600)
@@ -233,11 +253,22 @@ export default function App() {
   const handleUseLine = (line) => {
     setInjectedDraft(line)
     closeReport()
+    setActiveChat('partner')
+    setMobilePane('chat')
+  }
+
+  const handleLoadSample = () => {
+    chat.replaceLocal(loadSampleConversation())
+    setReport(null)
+    setPlain(null)
+    setSettingsOpen(false)
+    setActiveChat('partner')
     setMobilePane('chat')
   }
 
   const handleResetDemo = () => {
     chat.replaceLocal(resetDemo())
+    ai.clear()
     setReport(null)
     setPlain(null)
     setReportCount(0)
@@ -278,30 +309,40 @@ export default function App() {
         connection={chat.status}
       />
 
-      {chat.error && (
-        <p className="bg-rose-500/15 px-4 py-1.5 text-center text-[11.5px] text-rose-200">
-          Sync problem: {chat.error}
+      {/* Plain language, and only where it is relevant — the AI thread is local. */}
+      {!onAiChat && chat.status === 'error' && (
+        <p
+          className="bg-amber-500/15 px-4 py-1.5 text-center text-[11.5px] text-amber-200"
+          title={chat.error || ''}
+        >
+          Offline — your messages are saved here and will sync when you reconnect
         </p>
       )}
 
       <div className="flex min-h-0 flex-1">
         <Sidebar
           messages={messages}
+          aiMessages={ai.messages}
           viewingAs={viewingAs}
-          partnerId={partnerId}
+          partner={USERS[partnerId]}
+          companion={COMPANION}
+          activeChat={activeChat}
+          onSelectChat={openChat}
           className={mobilePane === 'list' ? 'flex md:flex' : 'hidden md:flex'}
         />
         <div className={mobilePane === 'list' ? 'hidden min-w-0 flex-1 md:flex' : 'flex min-w-0 flex-1'}>
           <ChatWindow
-            messages={messages}
+            key={activeChat}
+            isAI={onAiChat}
+            messages={onAiChat ? ai.messages : messages}
             viewingAs={viewingAs}
-            partnerId={partnerId}
-            typing={chat.partnerTyping}
-            online={chat.mode === 'cloud' ? chat.partnerOnline : true}
+            partner={onAiChat ? COMPANION : USERS[partnerId]}
+            typing={onAiChat ? ai.typing : chat.partnerTyping}
+            online={onAiChat ? true : chat.mode === 'cloud' ? chat.partnerOnline : true}
             live={chat.status === 'live'}
             room={chat.room}
-            onTypingChange={chat.setTyping}
-            onSend={chat.send}
+            onTypingChange={onAiChat ? undefined : chat.setTyping}
+            onSend={onAiChat ? ai.send : chat.send}
             onOpenScan={() => runScan(timeframe)}
             flaggedIds={flaggedIds}
             highlightsById={highlightsById}
@@ -345,6 +386,7 @@ export default function App() {
         onChange={setSettings}
         onClose={() => setSettingsOpen(false)}
         onResetDemo={handleResetDemo}
+        onLoadSample={handleLoadSample}
         onWipe={handleWipe}
       />
     </div>

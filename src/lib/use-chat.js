@@ -26,7 +26,9 @@ export function useChat({ settings, userId }) {
   const [status, setStatus] = useState('local') // local | connecting | live | error
   const [error, setError] = useState(null)
 
+  const [attempt, setAttempt] = useState(0)
   const channelRef = useRef(null)
+  const retryRef = useRef(null)
   const timers = useRef([])
   const cloud = isCloudConfigured(settings)
   const { room } = useMemo(() => cloudConfig(settings), [settings])
@@ -41,15 +43,28 @@ export function useChat({ settings, userId }) {
     () => () => {
       timers.current.forEach(clearTimeout)
       timers.current = []
+      clearTimeout(retryRef.current)
     },
     [],
   )
 
+  /**
+   * Phones lose signal in lifts, tunnels and dead zones. Back off and try
+   * again rather than sitting in a broken state until the app is restarted.
+   */
+  const scheduleRetry = useCallback((n) => {
+    clearTimeout(retryRef.current)
+    const delay = Math.min(60000, 5000 * 2 ** Math.min(n, 4))
+    retryRef.current = setTimeout(() => setAttempt((a) => a + 1), delay)
+  }, [])
+
   /* ---------------- local persistence ---------------- */
 
+  // Persist in both modes. In cloud mode this is an offline cache: a phone on a
+  // dead connection still opens on its history instead of an empty thread.
   useEffect(() => {
-    if (!cloud) saveMessages(messages)
-  }, [messages, cloud])
+    saveMessages(messages)
+  }, [messages])
 
   /* ---------------- cloud connection ---------------- */
 
@@ -63,7 +78,7 @@ export function useChat({ settings, userId }) {
     if (!client) return undefined
 
     let cancelled = false
-    setStatus('connecting')
+    setStatus(attempt === 0 ? 'connecting' : 'reconnecting')
     setError(null)
 
     const upsert = (incoming) =>
@@ -83,11 +98,21 @@ export function useChat({ settings, userId }) {
 
       if (cancelled) return
       if (loadError) {
+        // Keep whatever is cached locally rather than blanking the screen.
         setError(loadError.message)
         setStatus('error')
+        scheduleRetry(attempt)
         return
       }
-      setMessages(data.map(rowToMessage))
+
+      // Server is the source of truth, but anything that failed to send stays
+      // visible so the user can see it did not go through.
+      const remote = data.map(rowToMessage)
+      const remoteIds = new Set(remote.map((m) => m.id))
+      setMessages((prev) => {
+        const unsent = prev.filter((m) => m.status === 'failed' && !remoteIds.has(m.id))
+        return [...remote, ...unsent].sort((x, y) => x.ts - y.ts)
+      })
 
       const channel = client
         .channel(`room:${room}`, { config: { presence: { key: userId } } })
@@ -116,11 +141,14 @@ export function useChat({ settings, userId }) {
       channel.subscribe((state) => {
         if (cancelled) return
         if (state === 'SUBSCRIBED') {
+          clearTimeout(retryRef.current)
+          setAttempt(0)
           setStatus('live')
           channel.track({ user: userId, at: Date.now() })
         } else if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT') {
           setStatus('error')
-          setError('Realtime channel dropped. Check the project URL, key and RLS policies.')
+          setError('Realtime channel dropped')
+          scheduleRetry(attempt)
         }
       })
 
@@ -131,6 +159,7 @@ export function useChat({ settings, userId }) {
       if (cancelled) return
       setError(err?.message || String(err))
       setStatus('error')
+      scheduleRetry(attempt)
     })
 
     return () => {
@@ -141,20 +170,21 @@ export function useChat({ settings, userId }) {
       setPartnerOnline(false)
       setPartnerTyping(false)
     }
-  }, [cloud, room, settings, userId, later])
+  }, [cloud, room, settings, userId, later, attempt, scheduleRetry])
 
   /* ---------------- actions ---------------- */
 
   const send = useCallback(
-    async (text) => {
+    async (text, attachment = null) => {
       if (!userId) return
+      if (!text?.trim() && !attachment) return
       const message = {
         id: uid('msg'),
         from: userId,
-        text,
+        text: text?.trim() || '',
         ts: Date.now(),
         status: 'sent',
-        attachment: null,
+        attachment,
       }
 
       if (cloud) {
@@ -165,6 +195,8 @@ export function useChat({ settings, userId }) {
         const { error: sendError } = await client.from('messages').insert(messageToRow(message, room))
         if (sendError) {
           setError(sendError.message)
+          setStatus('error')
+          scheduleRetry(0)
           setMessages((prev) =>
             prev.map((m) => (m.id === message.id ? { ...m, status: 'failed' } : m)),
           )
@@ -198,7 +230,7 @@ export function useChat({ settings, userId }) {
         ])
       }, SIMULATED_REPLY_MS)
     },
-    [cloud, later, room, settings, userId],
+    [cloud, later, room, settings, userId, scheduleRetry],
   )
 
   /** Broadcast-only; never persisted. */

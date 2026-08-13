@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { BAKED_SUPABASE_ANON_KEY, BAKED_SUPABASE_URL, normalizeSupabaseUrl } from './cloud-config.js'
 
 /* ==================================================================
    Supabase wiring.
@@ -15,8 +16,15 @@ import { createClient } from '@supabase/supabase-js'
 export const DEFAULT_ROOM = 'TRUEMATCH-DEMO'
 
 export function cloudConfig(settings = {}) {
-  const url = (settings.supabaseUrl || import.meta.env.VITE_SUPABASE_URL || '').trim()
-  const key = (settings.supabaseKey || import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim()
+  const url = normalizeSupabaseUrl(
+    settings.supabaseUrl || import.meta.env.VITE_SUPABASE_URL || BAKED_SUPABASE_URL,
+  )
+  const key = (
+    settings.supabaseKey ||
+    import.meta.env.VITE_SUPABASE_ANON_KEY ||
+    BAKED_SUPABASE_ANON_KEY ||
+    ''
+  ).trim()
   const room = (settings.roomCode || DEFAULT_ROOM).trim().toUpperCase()
   return { url, key, room }
 }

@@ -15,11 +15,24 @@ function Ticks({ status }) {
 
 function Attachment({ attachment, outgoing }) {
   if (attachment.kind === 'image') {
+    // A real attachment carries `src`; the scripted demo ones only have a tint.
+    if (attachment.src) {
+      return (
+        <div className="mb-1.5 overflow-hidden rounded-lg">
+          <img
+            src={attachment.src}
+            alt={attachment.name || 'photo'}
+            loading="lazy"
+            className="max-h-72 w-full max-w-[16rem] rounded-lg object-cover"
+          />
+        </div>
+      )
+    }
     return (
       <div className="mb-1.5 overflow-hidden rounded-lg">
         <div
           className={cn(
-            'relative flex h-44 w-60 max-w-full items-end bg-gradient-to-br p-2.5',
+            'relative flex h-40 w-56 max-w-full items-end bg-gradient-to-br p-2.5 sm:h-44 sm:w-60',
             attachment.tint || 'from-slate-500/40 to-slate-800/40',
           )}
         >
@@ -105,9 +118,11 @@ function HighlightedText({ text, highlights }) {
 }
 
 const MessageBubble = forwardRef(function MessageBubble(
-  { message, outgoing, showTail, flagged, highlights, revealFlags, pulsing },
+  { message, outgoing, showTail, flagged, highlights, revealFlags, pulsing, searchTerm },
   ref,
 ) {
+  const showFlags = revealFlags && flagged
+  const activeHighlights = searchTerm?.trim().length >= 2 ? [searchTerm.trim()] : showFlags ? highlights : null
   return (
     <div
       ref={ref}
@@ -116,15 +131,15 @@ const MessageBubble = forwardRef(function MessageBubble(
     >
       <div
         className={cn(
-          'relative max-w-[85%] rounded-lg px-2.5 py-1.5 text-[14.5px] leading-relaxed shadow-sm sm:max-w-[65%]',
+          'relative max-w-[88%] rounded-lg px-2.5 py-1.5 text-[15px] leading-relaxed shadow-sm sm:max-w-[70%] lg:max-w-[65%]',
           outgoing ? 'bg-tm-bubble-out text-tm-ink' : 'bg-tm-panel-2 text-tm-text',
           showTail && (outgoing ? 'bubble-out rounded-tr-none' : 'bubble-in rounded-tl-none'),
-          revealFlags && flagged && 'ring-1 ring-rose-400/60',
+          showFlags && 'ring-1 ring-rose-400/60',
           pulsing && 'ring-2 ring-amber-300/80',
           'transition-shadow duration-500',
         )}
       >
-        {revealFlags && flagged && (
+        {showFlags && (
           <span className="absolute -top-1.5 -left-1.5 flex h-3 w-3">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400/70" />
             <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-500" />
@@ -135,8 +150,8 @@ const MessageBubble = forwardRef(function MessageBubble(
 
         {message.text ? (
           <p className="whitespace-pre-wrap break-words">
-            {revealFlags && flagged ? (
-              <HighlightedText text={message.text} highlights={highlights} />
+            {activeHighlights?.length ? (
+              <HighlightedText text={message.text} highlights={activeHighlights} />
             ) : (
               message.text
             )}
