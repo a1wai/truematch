@@ -5,6 +5,20 @@
 
 create extension if not exists pgcrypto;
 
+do $$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'messages'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'messages'
+      and column_name = 'conversation_id'
+  ) then
+    drop table public.messages cascade;
+  end if;
+end $$;
+
 create table if not exists public.profiles (
   id          uuid primary key references auth.users (id) on delete cascade,
   username    text        not null,

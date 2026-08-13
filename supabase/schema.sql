@@ -13,6 +13,31 @@
 create extension if not exists pgcrypto;
 
 -- ---------------------------------------------------------------------------
+-- Migration from the first build.
+--
+-- That version had a room-based `messages` table (room text, no
+-- conversation_id). `create table if not exists` silently skips it, and then
+-- the index below fails with: column "conversation_id" does not exist.
+--
+-- Only the legacy shape is dropped — a `messages` table that already has
+-- conversation_id is left alone, so re-running this file never destroys real
+-- conversations.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'messages'
+  ) and not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'messages'
+      and column_name = 'conversation_id'
+  ) then
+    drop table public.messages cascade;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
 -- Profiles: one row per account, keyed to Supabase Auth.
 -- The app signs up with a synthetic address (<username>@truematch.app) so that
 -- Supabase Auth still handles password hashing, sessions and refresh tokens —
