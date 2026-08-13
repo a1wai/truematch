@@ -7,6 +7,7 @@ export const KEYS = {
   session: `${NS}.session`,
   settings: `${NS}.settings`,
   reports: `${NS}.reports`,
+  aiChat: `${NS}.aichat`,
 }
 
 function read(key, fallback) {
@@ -42,7 +43,7 @@ export const DEFAULT_SETTINGS = {
   // Report
   reportLanguage: 'auto',
   // Behaviour
-  simulateReplies: true,
+  simulateReplies: false,
   stealthMode: true,
 }
 
@@ -62,16 +63,28 @@ function reanchor(messages) {
   return messages.map((m) => ({ ...m, ts: m.ts + shift }))
 }
 
+/**
+ * Conversations start empty. The demo script is opt-in from Settings, because a
+ * real install should open on a clean thread, not somebody else's argument.
+ */
 export function loadMessages() {
   const stored = read(KEYS.messages, null)
-  if (Array.isArray(stored) && stored.length) {
-    const fixed = reanchor(stored)
-    if (fixed !== stored) write(KEYS.messages, fixed)
-    return fixed
-  }
+  if (!Array.isArray(stored)) return []
+  const fixed = reanchor(stored)
+  if (fixed !== stored) write(KEYS.messages, fixed)
+  return fixed
+}
+
+/** Settings -> "Load sample conversation": drops the scripted thread in. */
+export function loadSampleConversation() {
   const seeded = buildSeed(Date.now())
   write(KEYS.messages, seeded)
   return seeded
+}
+
+export function clearConversation() {
+  write(KEYS.messages, [])
+  return []
 }
 
 export function saveMessages(messages) {
@@ -112,10 +125,21 @@ export function clearReports() {
 }
 
 export function resetDemo() {
-  const seeded = buildSeed(Date.now())
-  write(KEYS.messages, seeded)
+  write(KEYS.messages, [])
   write(KEYS.reports, [])
-  return seeded
+  write(KEYS.aiChat, {})
+  return []
+}
+
+/** The AI friend thread is private to each account, so it is keyed by user. */
+export function loadAiChat(userId) {
+  const all = read(KEYS.aiChat, {})
+  return Array.isArray(all?.[userId]) ? all[userId] : []
+}
+
+export function saveAiChat(userId, messages) {
+  const all = read(KEYS.aiChat, {})
+  write(KEYS.aiChat, { ...all, [userId]: messages })
 }
 
 export function wipeEverything() {
