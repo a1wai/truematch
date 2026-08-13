@@ -1,9 +1,11 @@
 import { CATEGORIES } from './analysis.js'
+import { languageInstruction, LANGUAGE_BY_ID } from './languages.js'
 
 /* ==================================================================
    Optional live-model layer.
-   Keys live in localStorage and requests go straight from the browser
-   to the provider — no True Match server sits in the middle. That is a
+
+   Keys live in localStorage and requests go straight from the browser to
+   the provider — no True Match server sits in the middle. That is a
    deliberate prototype trade-off, and the settings modal says so.
    ================================================================== */
 
@@ -17,7 +19,7 @@ export const PROVIDERS = {
     models: [
       { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile', tag: 'recommended' },
       { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant', tag: 'fastest' },
-      { id: 'qwen/qwen3-32b', label: 'Qwen 3 32B' },
+      { id: 'qwen/qwen3-32b', label: 'Qwen 3 32B', tag: 'good at Roman Urdu' },
       { id: 'deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 Distill 70B', tag: 'reasoning' },
     ],
   },
@@ -54,22 +56,52 @@ export const DEFAULT_MODEL_BY_PROVIDER = {
   custom: 'deepseek-r1',
 }
 
-const SYSTEM_PROMPT = `You are a forensic linguistics analyst. You read a two-person chat transcript and identify indirect signals of deception in ONE participant's messages.
+/**
+ * The normalisation step is the whole point of this prompt. People do not text
+ * in clean Urdu or clean English — they text in romanised, code-switched,
+ * inconsistently spelled fragments, and a model that analyses those at face
+ * value will flag spelling drift as evasion. So: translate first, judge second,
+ * and never treat orthography as evidence.
+ */
+const SYSTEM_PROMPT = `You are a forensic linguistics analyst specialising in romanised, code-switched chat between couples.
 
-Return STRICT JSON only, no prose, no markdown fences:
+STEP 1 — NORMALISE
+The transcript may be written in phonetic Latin script of a non-English language: Roman Urdu, Roman Hindi, Roman Indonesian, Roman Turkish or Roman Romanian, freely mixed with English inside single sentences. Spelling is not standardised — "nahi"/"nahin"/"nai", "kyunki"/"kyuki"/"kyun ke", "gaya"/"gya" are the same words. Silently work out the literal English meaning of every message before judging anything.
+
+CRITICAL: spelling, grammar, typos and script choice are NEVER evidence of deception. Do not flag a message for being written casually or inconsistently. Judge only what the words mean.
+
+STEP 2 — ANALYSE the normalised meaning for these signals only:
+- over_explaining: unprompted detail, justification stacking, specifics nobody asked for
+- distancing: a named person becoming anonymous ("mera dost Kamran" -> "office ka koi"), ownership draining out of the sentence
+- timeline: two statements about the same window of time that cannot both be true
+- deflection: the question being reframed as the asker's problem, memory being rewritten, thread shutdowns
+
+STEP 3 — REPORT
+Return STRICT JSON only. No prose, no markdown fences.
+
 {
-  "summary": "two sentences, specific, no hedging boilerplate",
+  "detected_language": "roman-ur" | "roman-hi" | "roman-id" | "roman-tr" | "roman-ro" | "en",
+  "summary": "two specific sentences in English",
+  "summary_local": "the same two sentences in the target language",
   "risk": 0-100,
   "flags": [
     {
       "category": "over_explaining" | "distancing" | "timeline" | "deflection",
       "severity": "low" | "medium" | "high",
-      "quote": "the exact substring from the transcript",
-      "reason": "why this is a signal, referencing the specific words"
+      "quote": "copied EXACTLY from the transcript, original spelling and script, no translation",
+      "translation": "literal English meaning of that quote",
+      "reason_en": "why this is a signal, in English, referencing the specific words",
+      "reason_local": "the same explanation in the target language"
     }
   ],
   "suggestions": [
-    { "title": "short label", "line": "an exact message the user could send", "why": "the mechanism that makes it work" }
+    {
+      "title": "short label in English",
+      "line": "an exact message the user can send, written in the language the couple actually texts in, ready to paste",
+      "line_en": "English translation of that line",
+      "why": "the mechanism that makes it work, in English",
+      "why_local": "the same, in the target language"
+    }
   ]
 }
 
@@ -106,6 +138,11 @@ function extractJson(text) {
   }
 }
 
+/** Reasoning models emit <think> blocks that are not part of the answer. */
+function stripThinking(text) {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
+}
+
 export function resolveEndpoint(settings) {
   const provider = PROVIDERS[settings.provider] || PROVIDERS.groq
   const url = settings.provider === 'custom' ? settings.endpoint?.trim() : provider.url
@@ -113,7 +150,7 @@ export function resolveEndpoint(settings) {
   return url
 }
 
-async function callModel(settings, messages, { signal, maxTokens = 1600 } = {}) {
+async function callModel(settings, messages, { signal, maxTokens = 2600, temperature = 0.2 } = {}) {
   const url = resolveEndpoint(settings)
   const headers = { 'Content-Type': 'application/json' }
   if (settings.apiKey) headers.Authorization = `Bearer ${settings.apiKey}`
@@ -126,7 +163,7 @@ async function callModel(settings, messages, { signal, maxTokens = 1600 } = {}) 
     body: JSON.stringify({
       model: settings.model,
       messages,
-      temperature: 0.2,
+      temperature,
       max_tokens: maxTokens,
       stream: false,
     }),
@@ -139,7 +176,7 @@ async function callModel(settings, messages, { signal, maxTokens = 1600 } = {}) 
   const data = await res.json()
   const content = data?.choices?.[0]?.message?.content
   if (!content) throw new Error('Empty response from model')
-  return content
+  return stripThinking(content)
 }
 
 /** Cheap round-trip used by the "Test connection" button. */
@@ -158,9 +195,18 @@ export async function testConnection(settings) {
  * the local engine's so the report can merge them; throws on any failure so the
  * caller can fall back to on-device results and say so in the UI.
  */
-export async function runLiveAnalysis({ messages, targetId, targetName, viewerName, settings, signal }) {
+export async function runLiveAnalysis({
+  messages,
+  targetId,
+  targetName,
+  viewerName,
+  language = 'en',
+  settings,
+  signal,
+}) {
   const tagged = messages.map((m) => ({ ...m, from: m.from === targetId ? 'target' : 'viewer' }))
   const body = transcript(tagged, targetName, viewerName)
+  const langLabel = LANGUAGE_BY_ID[language]?.label || 'English'
 
   const content = await callModel(
     settings,
@@ -168,7 +214,13 @@ export async function runLiveAnalysis({ messages, targetId, targetName, viewerNa
       { role: 'system', content: SYSTEM_PROMPT },
       {
         role: 'user',
-        content: `Participant under analysis: ${targetName}\nOther participant: ${viewerName}\n\nTRANSCRIPT\n${body}`,
+        content: `Participant under analysis: ${targetName}
+Other participant: ${viewerName}
+Target language for "_local" fields: ${langLabel}
+${languageInstruction(language)}
+
+TRANSCRIPT
+${body}`,
       },
     ],
     { signal },
@@ -180,8 +232,9 @@ export async function runLiveAnalysis({ messages, targetId, targetName, viewerNa
     .slice(0, 10)
     .map((f, i) => {
       // Anchor each model finding back to a real message where possible.
-      const source = f.quote
-        ? messages.find((m) => m.text && m.text.toLowerCase().includes(String(f.quote).toLowerCase().slice(0, 24)))
+      const needle = String(f.quote || '').toLowerCase().slice(0, 24)
+      const source = needle
+        ? messages.find((m) => m.text && m.text.toLowerCase().includes(needle))
         : null
       return {
         id: `ai_${i}`,
@@ -190,7 +243,9 @@ export async function runLiveAnalysis({ messages, targetId, targetName, viewerNa
         messageId: source?.id ?? null,
         ts: source?.ts ?? Date.now(),
         headline: 'Live model finding',
-        reason: String(f.reason || '').slice(0, 600),
+        reason: String(f.reason_en || f.reason || '').slice(0, 700),
+        reasonLocal: String(f.reason_local || '').slice(0, 700),
+        translation: String(f.translation || '').slice(0, 400),
         highlights: f.quote ? [String(f.quote).slice(0, 120)] : [],
         evidence: [],
         source: 'llm',
@@ -199,16 +254,65 @@ export async function runLiveAnalysis({ messages, targetId, targetName, viewerNa
     })
 
   return {
+    detectedLanguage: parsed.detected_language || null,
     summary: typeof parsed.summary === 'string' ? parsed.summary : '',
+    summaryLocal: typeof parsed.summary_local === 'string' ? parsed.summary_local : '',
     risk: Number.isFinite(parsed.risk) ? Math.round(parsed.risk) : null,
     flags,
     suggestions: (Array.isArray(parsed.suggestions) ? parsed.suggestions : []).slice(0, 3).map((s, i) => ({
       id: `ai_sug_${i}`,
       category: 'timeline',
-      title: String(s.title || 'Model suggestion').slice(0, 80),
+      title: String(s.title || 'Model suggestion').slice(0, 90),
       line: String(s.line || '').slice(0, 300),
-      why: String(s.why || '').slice(0, 400),
+      lineEn: String(s.line_en || '').slice(0, 300),
+      why: String(s.why || '').slice(0, 500),
+      whyLocal: String(s.why_local || '').slice(0, 500),
       source: 'llm',
     })),
+  }
+}
+
+/**
+ * "Simplify this report" — a short, plain-language rewrite in the reader's own
+ * language. The local fallback in report.js covers the no-key case; this is the
+ * better version when a model is available.
+ */
+export async function simplifyReport({ report, targetName, language = 'en', settings, signal }) {
+  const findings = report.flags
+    .slice(0, 8)
+    .map((f, i) => `${i + 1}. [${f.category}/${f.severity}] "${(f.highlights?.[0] || '').slice(0, 80)}" — ${f.reason.slice(0, 220)}`)
+    .join('\n')
+
+  const content = await callModel(
+    settings,
+    [
+      {
+        role: 'system',
+        content: `You rewrite technical deception reports for someone upset and in a hurry. No jargon, no hedging, no lecture. ${languageInstruction(language)}
+
+Return STRICT JSON only:
+{
+  "bottom_line": "one sentence: what the evidence actually suggests",
+  "points": ["at most 3 short bullets, one finding each, plain words"],
+  "next_step": "one concrete, calm thing to do or ask next"
+}`,
+      },
+      {
+        role: 'user',
+        content: `Person analysed: ${targetName}
+Overall risk score: ${report.risk}%
+Findings:
+${findings}`,
+      },
+    ],
+    { signal, maxTokens: 700, temperature: 0.3 },
+  )
+
+  const parsed = extractJson(content)
+  return {
+    bottomLine: String(parsed.bottom_line || '').slice(0, 400),
+    points: (Array.isArray(parsed.points) ? parsed.points : []).slice(0, 3).map((p) => String(p).slice(0, 300)),
+    nextStep: String(parsed.next_step || '').slice(0, 300),
+    source: 'llm',
   }
 }

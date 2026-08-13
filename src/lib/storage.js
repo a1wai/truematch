@@ -29,11 +29,19 @@ export function write(key, value) {
 }
 
 export const DEFAULT_SETTINGS = {
+  // AI engine
   provider: 'groq',
   apiKey: '',
   model: 'llama-3.3-70b-versatile',
   endpoint: '',
   useLiveAI: false,
+  // Realtime sync — blank means the app runs in local-only mode
+  supabaseUrl: '',
+  supabaseKey: '',
+  roomCode: 'TRUEMATCH-DEMO',
+  // Report
+  reportLanguage: 'auto',
+  // Behaviour
   simulateReplies: true,
   stealthMode: true,
 }

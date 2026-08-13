@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 
 const BAND_COLORS = {
-  high: { stroke: '#ef4444', glow: 'rgb(239 68 68 / 0.35)', text: 'text-rose-400' },
+  high: { stroke: '#ff2e63', glow: 'rgb(255 46 99 / 0.4)', text: 'text-tm-rose' },
   elevated: { stroke: '#f59e0b', glow: 'rgb(245 158 11 / 0.32)', text: 'text-amber-400' },
   moderate: { stroke: '#eab308', glow: 'rgb(234 179 8 / 0.28)', text: 'text-yellow-400' },
   low: { stroke: '#22c55e', glow: 'rgb(34 197 94 / 0.28)', text: 'text-emerald-400' },
@@ -46,7 +46,7 @@ export default function RiskRing({ value = 0, band = 'low', size = 208, label })
           cy={size / 2}
           r={r}
           fill="none"
-          stroke="#1f2c33"
+          stroke="#2f1b2b"
           strokeWidth={stroke}
         />
         <motion.circle
@@ -66,7 +66,7 @@ export default function RiskRing({ value = 0, band = 'low', size = 208, label })
       </svg>
       <div className="absolute inset-0 grid place-content-center text-center">
         <span className={`text-5xl font-bold tabular-nums ${colors.text}`}>{shown}%</span>
-        <span className="mt-1 max-w-[10rem] text-[11px] font-medium uppercase tracking-widest text-wa-muted">
+        <span className="mt-1 max-w-[10rem] text-[11px] font-medium uppercase tracking-widest text-tm-muted">
           {label}
         </span>
       </div>

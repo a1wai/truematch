@@ -1,81 +1,108 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Eye, EyeOff, Fingerprint, Lock, Mail, ShieldCheck, Sparkles } from 'lucide-react'
+import { Eye, EyeOff, Heart, Lock, Mail, ScanFace, Sparkles, Wifi } from 'lucide-react'
 import { USERS } from '../data/seed.js'
+import { cloudConfig, isCloudConfigured } from '../lib/supabase.js'
 import { cn } from '../lib/utils.js'
 import Avatar from './Avatar.jsx'
 
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, settings }) {
   const [mode, setMode] = useState('login')
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const cloud = isCloudConfigured(settings)
+  const { room } = cloudConfig(settings)
 
   const submit = (e) => {
     e.preventDefault()
-    // Prototype auth: any address resolves to the user it looks most like.
-    const guess = email.trim().toLowerCase().startsWith('jordan') ? 'b' : 'a'
+    // Prototype auth: the address just picks which of the two accounts you are.
+    const guess = email.trim().toLowerCase().startsWith('bisma') ? 'b' : 'a'
     onLogin(guess)
   }
 
   return (
-    <div className="relative min-h-dvh overflow-hidden bg-wa-bg">
+    <div className="relative min-h-dvh overflow-y-auto bg-tm-bg">
       {/* ambient glow */}
-      <div className="pointer-events-none absolute -top-40 left-1/2 h-[32rem] w-[32rem] -translate-x-1/2 rounded-full bg-wa-teal/20 blur-[120px]" />
-      <div className="pointer-events-none absolute -bottom-52 -right-24 h-[28rem] w-[28rem] rounded-full bg-emerald-500/10 blur-[130px]" />
+      <div className="pointer-events-none absolute -top-40 left-1/2 h-[30rem] w-[30rem] -translate-x-1/2 rounded-full bg-tm-rose/20 blur-[120px]" />
+      <div className="pointer-events-none absolute -bottom-52 -right-24 h-[26rem] w-[26rem] rounded-full bg-fuchsia-500/10 blur-[130px]" />
 
-      <div className="relative mx-auto flex min-h-dvh w-full max-w-5xl flex-col items-center justify-center gap-10 px-5 py-12 lg:flex-row lg:gap-16">
-        {/* Brand side */}
+      <div className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-5 py-10">
+        {/* Brand */}
         <motion.div
-          initial={{ opacity: 0, y: 18 }}
+          initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="w-full max-w-md text-center lg:text-left"
+          transition={{ duration: 0.45 }}
+          className="text-center"
         >
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-wa-teal/30 bg-wa-teal/10 px-3 py-1 text-xs font-medium text-wa-teal-bright">
-            <Sparkles className="h-3.5 w-3.5" />
-            Prototype build · v1.0
+          <div className="relative mx-auto mb-4 grid h-16 w-16 place-items-center">
+            <span
+              className="absolute inset-0 rounded-full bg-tm-rose/25 blur-xl"
+              style={{ animation: 'heartbeat 2.6s ease-in-out infinite' }}
+            />
+            <Heart className="relative h-9 w-9 fill-tm-rose text-tm-rose" />
           </div>
-          <h1 className="text-4xl font-bold tracking-tight text-wa-text sm:text-5xl">
-            True<span className="text-wa-teal">Match</span>
+          <h1 className="text-3xl font-bold tracking-tight text-tm-text">
+            True<span className="text-tm-rose">Match</span>
           </h1>
-          <p className="mt-4 text-[15px] leading-relaxed text-wa-muted">
-            End-to-end encrypted messaging for two. Simple, quiet, and yours — with a
-            <span className="text-wa-text"> language integrity engine</span> running quietly in the
-            background of every conversation.
+          <p className="mx-auto mt-2.5 max-w-xs text-[13.5px] leading-relaxed text-tm-muted">
+            Private messaging for two — with a quiet honesty check running underneath every
+            conversation.
           </p>
-          <ul className="mt-7 space-y-3 text-sm text-wa-muted">
-            {[
-              ['Nothing leaves this device', ShieldCheck],
-              ['Analysis runs locally, on demand', Fingerprint],
-              ['Bring your own open-source model', Sparkles],
-            ].map(([label, Icon]) => (
-              <li key={label} className="flex items-center justify-center gap-3 lg:justify-start">
-                <span className="grid h-8 w-8 place-items-center rounded-lg bg-wa-panel-2 text-wa-teal">
-                  <Icon className="h-4 w-4" />
-                </span>
-                {label}
-              </li>
-            ))}
-          </ul>
         </motion.div>
 
-        {/* Card side */}
+        {/* Demo accounts — the fast path, so this sits above the form */}
         <motion.div
-          initial={{ opacity: 0, y: 24 }}
+          initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="w-full max-w-md rounded-2xl border border-white/5 bg-wa-panel/90 p-6 shadow-2xl shadow-black/40 backdrop-blur sm:p-8"
+          transition={{ duration: 0.45, delay: 0.08 }}
+          className="rounded-2xl border border-tm-rose/20 bg-tm-panel/80 p-4 shadow-2xl shadow-black/40 backdrop-blur"
         >
-          <div className="mb-6 flex rounded-xl bg-wa-bg/70 p-1">
+          <p className="mb-3 flex items-center justify-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-tm-rose-bright">
+            <Sparkles className="h-3.5 w-3.5" /> Tap to enter
+          </p>
+          <div className="grid gap-2.5">
+            {Object.values(USERS).map((user) => (
+              <button
+                key={user.id}
+                type="button"
+                onClick={() => onLogin(user.id)}
+                className="group flex items-center gap-3 rounded-xl border border-white/8 bg-tm-panel-2/70 p-3 text-left transition active:scale-[0.99] hover:border-tm-rose/50 hover:bg-tm-panel-2"
+              >
+                <Avatar user={user} size="lg" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[15px] font-semibold text-tm-text">{user.name}</span>
+                  <span className="block truncate text-[12px] text-tm-muted">
+                    {user.label} · {user.email}
+                  </span>
+                </span>
+                <span className="rounded-lg bg-tm-rose/15 px-2.5 py-1.5 text-[11px] font-semibold text-tm-rose-bright">
+                  Login
+                </span>
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-center text-[11px] leading-relaxed text-tm-muted/80">
+            Test accounts — no password needed. Open one on each phone to chat for real.
+          </p>
+        </motion.div>
+
+        {/* Credential form */}
+        <motion.div
+          initial={{ opacity: 0, y: 22 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, delay: 0.16 }}
+          className="rounded-2xl border border-white/5 bg-tm-panel/70 p-5 backdrop-blur"
+        >
+          <div className="mb-4 flex rounded-xl bg-tm-bg/70 p-1">
             {['login', 'signup'].map((m) => (
               <button
                 key={m}
                 type="button"
                 onClick={() => setMode(m)}
                 className={cn(
-                  'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition',
-                  mode === m ? 'bg-wa-teal text-wa-bg' : 'text-wa-muted hover:text-wa-text',
+                  'flex-1 rounded-lg px-4 py-2 text-[13px] font-medium transition',
+                  mode === m ? 'bg-tm-rose text-white' : 'text-tm-muted hover:text-tm-text',
                 )}
               >
                 {m === 'login' ? 'Log in' : 'Sign up'}
@@ -83,14 +110,14 @@ export default function Login({ onLogin }) {
             ))}
           </div>
 
-          <form onSubmit={submit} className="space-y-4">
+          <form onSubmit={submit} className="space-y-3">
             <Field icon={Mail} label="Email">
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@truematch.app"
-                className="w-full bg-transparent text-sm text-wa-text placeholder:text-wa-muted/60 focus:outline-none"
+                placeholder="usama@truematch.app"
+                className="w-full bg-transparent text-sm text-tm-text placeholder:text-tm-muted/60 focus:outline-none"
               />
             </Field>
             <Field icon={Lock} label="Password">
@@ -99,12 +126,12 @@ export default function Login({ onLogin }) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full bg-transparent text-sm text-wa-text placeholder:text-wa-muted/60 focus:outline-none"
+                className="w-full bg-transparent text-sm text-tm-text placeholder:text-tm-muted/60 focus:outline-none"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
-                className="text-wa-muted transition hover:text-wa-text"
+                className="text-tm-muted transition hover:text-tm-text"
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -113,47 +140,26 @@ export default function Login({ onLogin }) {
 
             <button
               type="submit"
-              className="w-full rounded-xl bg-wa-teal py-3 text-sm font-semibold text-wa-bg transition hover:bg-wa-teal-bright active:scale-[0.99]"
+              className="w-full rounded-xl bg-tm-rose py-3 text-sm font-semibold text-white transition hover:bg-tm-rose-bright active:scale-[0.99]"
             >
               {mode === 'login' ? 'Continue' : 'Create account'}
             </button>
           </form>
-
-          <div className="my-6 flex items-center gap-3 text-[11px] uppercase tracking-widest text-wa-muted/70">
-            <span className="h-px flex-1 bg-white/5" />
-            demo accounts
-            <span className="h-px flex-1 bg-white/5" />
-          </div>
-
-          <div className="grid gap-3">
-            {Object.values(USERS).map((user) => (
-              <button
-                key={user.id}
-                type="button"
-                onClick={() => onLogin(user.id)}
-                className="group flex items-center gap-3 rounded-xl border border-white/5 bg-wa-panel-2/70 p-3 text-left transition hover:border-wa-teal/40 hover:bg-wa-panel-2"
-              >
-                <Avatar user={user} size="md" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-wa-text">
-                    Login as {user.label}
-                  </span>
-                  <span className="block truncate text-xs text-wa-muted">
-                    {user.name} · {user.email}
-                  </span>
-                </span>
-                <span className="rounded-lg bg-wa-teal/10 px-2.5 py-1 text-[11px] font-medium text-wa-teal-bright opacity-0 transition group-hover:opacity-100">
-                  Enter
-                </span>
-              </button>
-            ))}
-          </div>
-
-          <p className="mt-6 text-center text-[11px] leading-relaxed text-wa-muted/70">
-            Prototype only — no real authentication, no server. Both accounts live on this device so
-            you can play both sides of the conversation.
-          </p>
         </motion.div>
+
+        <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-tm-muted/70">
+          {cloud ? (
+            <>
+              <Wifi className="h-3.5 w-3.5 text-emerald-400" />
+              Live sync on · room <span className="font-mono text-tm-muted">{room}</span>
+            </>
+          ) : (
+            <>
+              <ScanFace className="h-3.5 w-3.5" />
+              Running on this device only — add a sync room in Settings
+            </>
+          )}
+        </p>
       </div>
     </div>
   )
@@ -161,8 +167,8 @@ export default function Login({ onLogin }) {
 
 function Field({ icon: Icon, label, children }) {
   return (
-    <label className="flex items-center gap-3 rounded-xl border border-white/5 bg-wa-bg/60 px-4 py-3 transition focus-within:border-wa-teal/50">
-      <Icon className="h-4 w-4 shrink-0 text-wa-muted" />
+    <label className="flex items-center gap-3 rounded-xl border border-white/5 bg-tm-bg/60 px-4 py-3 transition focus-within:border-tm-rose/50">
+      <Icon className="h-4 w-4 shrink-0 text-tm-muted" />
       <span className="sr-only">{label}</span>
       {children}
     </label>

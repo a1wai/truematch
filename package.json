@@ -3,13 +3,18 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "True Match — a 2-person WhatsApp-style messenger with a hidden AI Lie & Deception Detector.",
+  "description": "True Match — real-time 2-person messenger with a multilingual AI lie & deception detector.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "android:add": "cap add android",
+    "android:sync": "npm run build && cap sync android",
+    "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.0",
+    "@supabase/supabase-js": "^2.112.3",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",
     "framer-motion": "^13.1.0",
@@ -19,6 +24,8 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.0.5",
     "tailwindcss": "^4.3.3",
