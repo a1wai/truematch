@@ -1,10 +1,9 @@
-import { useMemo, useState } from 'react'
-import { Search, Sparkles, X } from 'lucide-react'
+import { Loader2, Settings, Sparkles, UserPlus } from 'lucide-react'
 import { cn, timeLabel } from '../lib/utils.js'
 import Avatar from './Avatar.jsx'
 
-function Row({ user, isAI, active, last, unread, viewingAs, onSelect }) {
-  const preview = last?.text || (last?.attachment ? `📷 Photo` : 'Tap to start chatting')
+function Row({ user, isAI, active, last, unread, meId, onSelect }) {
+  const preview = last?.text || (last?.attachment ? '📷 Photo' : 'Tap to start chatting')
   return (
     <button
       onClick={onSelect}
@@ -17,7 +16,9 @@ function Row({ user, isAI, active, last, unread, viewingAs, onSelect }) {
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-[15px] font-medium text-tm-text">{user.name}</span>
+            <span className="truncate text-[15px] font-medium text-tm-text">
+              {user.name || `@${user.username}`}
+            </span>
             {isAI && (
               <span className="shrink-0 rounded bg-tm-rose/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-tm-rose-bright">
                 AI
@@ -30,7 +31,7 @@ function Row({ user, isAI, active, last, unread, viewingAs, onSelect }) {
         </span>
         <span className="mt-0.5 flex items-center justify-between gap-2">
           <span className="truncate text-[13px] text-tm-muted">
-            {last?.from === viewingAs ? 'You: ' : ''}
+            {last?.from === meId ? 'You: ' : ''}
             {preview}
           </span>
           {unread > 0 && (
@@ -45,99 +46,90 @@ function Row({ user, isAI, active, last, unread, viewingAs, onSelect }) {
 }
 
 export default function Sidebar({
-  messages,
+  profile,
+  conversations,
+  loading,
   aiMessages,
-  viewingAs,
-  partner,
   companion,
   activeChat,
   onSelectChat,
+  onAddUser,
+  onOpenMenu,
   className,
 }) {
-  const [query, setQuery] = useState('')
-
-  const chats = useMemo(() => {
-    const list = [
-      {
-        id: 'partner',
-        user: partner,
-        isAI: false,
-        last: messages[messages.length - 1],
-        unread: messages.filter((m) => m.from !== viewingAs && m.status !== 'read').length,
-      },
-      {
-        id: 'ai',
-        user: companion,
-        isAI: true,
-        last: aiMessages[aiMessages.length - 1],
-        unread: 0,
-      },
-    ]
-    const q = query.trim().toLowerCase()
-    if (!q) return list
-    return list.filter(
-      (c) => c.user.name.toLowerCase().includes(q) || (c.last?.text || '').toLowerCase().includes(q),
-    )
-  }, [messages, aiMessages, partner, companion, viewingAs, query])
+  const aiLast = aiMessages[aiMessages.length - 1]
 
   return (
     <aside
       className={cn(
-        'w-full min-w-0 shrink-0 flex-col border-r border-white/5 bg-tm-panel md:w-[320px] lg:w-[380px]',
+        'h-full w-full min-w-0 shrink-0 flex-col overflow-hidden border-r border-white/5 bg-tm-panel md:w-[320px] lg:w-[380px]',
         className,
       )}
     >
-      <div className="flex items-center justify-between px-4 py-3">
-        <h2 className="text-lg font-semibold text-tm-text">Chats</h2>
-        <span className="flex items-center gap-1.5 rounded-lg bg-tm-rose/10 px-2 py-1 text-[10.5px] font-medium text-tm-rose-bright">
-          <Sparkles className="h-3 w-3" />
-          {chats.length} active
-        </span>
-      </div>
-
-      <div className="px-3 pb-2">
-        <div className="flex items-center gap-2.5 rounded-xl bg-tm-panel-2 px-3.5 py-2.5">
-          <Search className="h-4 w-4 shrink-0 text-tm-muted" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search chats"
-            className="min-w-0 flex-1 bg-transparent text-[14px] text-tm-text placeholder:text-tm-muted/70 focus:outline-none"
-          />
-          {query && (
-            <button
-              onClick={() => setQuery('')}
-              className="shrink-0 text-tm-muted transition hover:text-tm-text"
-              aria-label="Clear search"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
+      {/* Header: identity, add someone, and the settings gear */}
+      <div className="flex shrink-0 items-center gap-3 border-b border-white/5 px-4 py-3">
+        <Avatar user={profile} size="md" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[15px] font-semibold text-tm-text">@{profile.username}</p>
+          <p className="text-[11px] text-tm-muted">Chats</p>
         </div>
+        <button
+          onClick={onAddUser}
+          className="grid h-11 w-11 place-items-center rounded-full bg-tm-rose/15 text-tm-rose-bright transition active:scale-90"
+          aria-label="Add someone"
+          title="Add someone"
+        >
+          <UserPlus className="h-5 w-5" />
+        </button>
+        <button
+          onClick={onOpenMenu}
+          className="grid h-11 w-11 place-items-center rounded-full text-tm-muted transition active:bg-tm-panel-2 hover:text-tm-text"
+          aria-label="Settings"
+          title="Settings"
+        >
+          <Settings className="h-5 w-5" />
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
-        {chats.map((chat) => (
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {conversations.map((c) => (
           <Row
-            key={chat.id}
-            user={chat.user}
-            isAI={chat.isAI}
-            active={activeChat === chat.id}
-            last={chat.last}
-            unread={chat.unread}
-            viewingAs={viewingAs}
-            onSelect={() => onSelectChat(chat.id)}
+            key={c.id}
+            user={c.other}
+            active={activeChat === c.id}
+            last={c.last}
+            unread={c.unread}
+            meId={profile.id}
+            onSelect={() => onSelectChat(c.id)}
           />
         ))}
-        {chats.length === 0 && (
-          <p className="px-4 py-8 text-center text-[13px] text-tm-muted">No chats match “{query}”</p>
-        )}
-      </div>
 
-      <div className="border-t border-white/5 px-4 py-3">
-        <p className="text-[11px] leading-relaxed text-tm-muted/70">
-          {messages.length} messages with {partner.name}
-        </p>
+        <Row
+          user={companion}
+          isAI
+          active={activeChat === 'ai'}
+          last={aiLast ? { text: aiLast.text, ts: aiLast.ts, from: aiLast.from } : null}
+          unread={0}
+          meId={profile.id}
+          onSelect={() => onSelectChat('ai')}
+        />
+
+        {loading && (
+          <p className="flex items-center justify-center gap-2 px-4 py-6 text-[12.5px] text-tm-muted">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading your chats…
+          </p>
+        )}
+
+        {!loading && conversations.length === 0 && (
+          <div className="px-6 py-10 text-center">
+            <Sparkles className="mx-auto mb-3 h-6 w-6 text-tm-rose/60" />
+            <p className="text-[13.5px] font-medium text-tm-text">No chats yet</p>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-tm-muted">
+              Tap the <span className="text-tm-rose-bright">add</span> button and search for
+              someone&rsquo;s username to start talking.
+            </p>
+          </div>
+        )}
       </div>
     </aside>
   )

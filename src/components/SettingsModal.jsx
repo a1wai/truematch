@@ -10,11 +10,8 @@ import {
   EyeOff,
   Key,
   Languages,
-  Link2,
   RefreshCw,
-  RotateCcw,
   Server,
-  Sparkles,
   Trash2,
   TriangleAlert,
   Wifi,
@@ -53,15 +50,7 @@ function Toggle({ checked, onChange, label, hint }) {
   )
 }
 
-export default function SettingsModal({
-  open,
-  settings,
-  onChange,
-  onClose,
-  onResetDemo,
-  onLoadSample,
-  onWipe,
-}) {
+export default function SettingsModal({ open, settings, onChange, onClose, onWipe }) {
   const [showKey, setShowKey] = useState(false)
   const [showCloudKey, setShowCloudKey] = useState(false)
   const [testState, setTestState] = useState({ status: 'idle' })
@@ -192,17 +181,6 @@ export default function SettingsModal({
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-2.5 rounded-xl border border-white/8 bg-tm-bg/60 px-3.5 py-3">
-                    <Link2 className="h-4 w-4 shrink-0 text-tm-muted" />
-                    <input
-                      value={settings.roomCode}
-                      onChange={(e) => onChange({ ...settings, roomCode: e.target.value.toUpperCase() })}
-                      placeholder="ROOM CODE"
-                      autoComplete="off"
-                      spellCheck={false}
-                      className="w-full bg-transparent font-mono text-[13px] uppercase tracking-wider text-tm-text placeholder:text-tm-muted/60 focus:outline-none"
-                    />
-                  </div>
                 </div>
 
                 <div className="mt-3 flex items-center gap-3">
@@ -234,8 +212,8 @@ export default function SettingsModal({
                 </div>
 
                 <p className="mt-3 text-[11.5px] leading-relaxed text-tm-muted">
-                  Both devices need the same URL, key and room code. Leave blank to keep everything on
-                  this device. Setup SQL is in <code className="font-mono">supabase/schema.sql</code>.
+                  Accounts, chats and photos all live in this project. Setup SQL is in{' '}
+                  <code className="font-mono">supabase/schema.sql</code>. Changing this signs you out.
                 </p>
               </div>
 
@@ -405,12 +383,6 @@ export default function SettingsModal({
                   hint="Sends the transcript to the provider above and merges its findings with the on-device analysis. Off means everything stays local."
                 />
                 <Toggle
-                  checked={settings.simulateReplies}
-                  onChange={(v) => onChange({ ...settings, simulateReplies: v })}
-                  label="Simulate the other side"
-                  hint="Only used when sync is off. The other account types and answers on its own so a solo demo still feels like a conversation."
-                />
-                <Toggle
                   checked={settings.stealthMode}
                   onChange={(v) => onChange({ ...settings, stealthMode: v })}
                   label="Stealth mode"
@@ -427,33 +399,21 @@ export default function SettingsModal({
                 </p>
               </div>
 
-              {/* Danger zone */}
+              {/* Local data */}
               <div>
                 <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-tm-muted">
-                  <Cpu className="h-3.5 w-3.5" /> Conversations
+                  <Cpu className="h-3.5 w-3.5" /> This device
                 </p>
                 <p className="mb-2.5 text-[11.5px] leading-relaxed text-tm-muted">
-                  Chats start empty. Load the sample thread if you want something for the scanner to
-                  chew on before you have built up real history.
+                  Clears saved scan reports, your AI-friend thread and settings on this device.
+                  Conversations stay in Supabase and come back when you log in.
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <button
-                    onClick={onLoadSample}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-tm-rose/30 bg-tm-rose/10 px-3 py-3 text-[12.5px] font-medium text-tm-rose-bright transition active:scale-[0.98] hover:bg-tm-rose/20"
-                  >
-                    <Sparkles className="h-4 w-4" /> Load sample conversation
-                  </button>
-                  <button
-                    onClick={onResetDemo}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-3 text-[12.5px] font-medium text-tm-muted transition hover:text-tm-text"
-                  >
-                    <RotateCcw className="h-4 w-4" /> Clear all chats
-                  </button>
-                  <button
+                                    <button
                     onClick={onWipe}
                     className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-3 text-[12.5px] font-medium text-rose-300 transition hover:bg-rose-500/20 sm:col-span-2"
                   >
-                    <Trash2 className="h-4 w-4" /> Erase everything
+                    <Trash2 className="h-4 w-4" /> Clear local data
                   </button>
                 </div>
               </div>

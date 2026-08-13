@@ -8,15 +8,34 @@ const SIZES = {
   xl: 'h-16 w-16 text-lg',
 }
 
+// Deterministic so the same person is always the same colour on every device.
+const TINTS = [
+  'from-rose-400 to-pink-600',
+  'from-fuchsia-400 to-purple-600',
+  'from-sky-400 to-indigo-600',
+  'from-amber-400 to-orange-600',
+  'from-emerald-400 to-teal-600',
+  'from-violet-400 to-indigo-600',
+]
+
+function tintFor(seed = '') {
+  let hash = 0
+  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0
+  return TINTS[hash % TINTS.length]
+}
+
 /**
- * Photos live in `public/avatars/`. BASE_URL keeps the path correct whether the
- * app is served from a domain root (Vercel), a repo subpath (GitHub Pages) or
- * the Capacitor file:// shell on Android. A missing file falls back to the
- * monogram rather than a broken image.
+ * Works with a Supabase profile ({ username, avatar }) or a locally defined
+ * character ({ name, initials, tint }). A missing or broken picture falls back
+ * to a monogram rather than a broken-image icon.
  */
 export default function Avatar({ user, size = 'md', online = false, ring = false, className }) {
   const [failed, setFailed] = useState(false)
-  const src = user.photo ? `${import.meta.env.BASE_URL}avatars/${user.photo}` : null
+  if (!user) return null
+
+  const label = user.name || user.username || '?'
+  const initials = user.initials || label.slice(0, 2).toUpperCase()
+  const src = user.avatar || null
   const showPhoto = src && !failed
 
   return (
@@ -25,20 +44,20 @@ export default function Avatar({ user, size = 'md', online = false, ring = false
         className={cn(
           'grid place-items-center overflow-hidden rounded-full bg-gradient-to-br font-semibold tracking-wide text-white/95',
           SIZES[size],
-          user.tint,
+          user.tint || tintFor(label),
           ring ? 'ring-2 ring-tm-rose/60' : 'ring-1 ring-white/10',
         )}
       >
         {showPhoto ? (
           <img
             src={src}
-            alt={user.name}
+            alt={label}
             loading="lazy"
             onError={() => setFailed(true)}
             className="h-full w-full object-cover"
           />
         ) : (
-          user.initials
+          initials
         )}
       </div>
       {online && (

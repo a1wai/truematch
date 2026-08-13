@@ -1,10 +1,9 @@
-import { WEEK } from './utils.js'
-import { buildSeed } from '../data/seed.js'
+/* Local device state only. Accounts, conversations, messages and media all
+   live in Supabase — what stays here is app preferences, saved scan reports
+   and the private AI-friend thread. */
 
 const NS = 'truematch.v1'
 export const KEYS = {
-  messages: `${NS}.messages`,
-  session: `${NS}.session`,
   settings: `${NS}.settings`,
   reports: `${NS}.reports`,
   aiChat: `${NS}.aichat`,
@@ -43,53 +42,9 @@ export const DEFAULT_SETTINGS = {
   // Report
   reportLanguage: 'auto',
   // Behaviour
-  simulateReplies: false,
   stealthMode: true,
 }
 
-export const DEFAULT_SESSION = { userId: null, viewingAs: null }
-
-/**
- * The demo script talks about specific weekdays, so it can only be shifted in
- * whole weeks — that keeps "on Monday" pointing at a Monday. If the saved
- * conversation has gone stale by a week or more, slide it forward.
- */
-function reanchor(messages) {
-  if (!messages.length) return messages
-  const newest = Math.max(...messages.map((m) => m.ts))
-  const staleness = Date.now() - newest
-  if (staleness < WEEK) return messages
-  const shift = Math.floor(staleness / WEEK) * WEEK
-  return messages.map((m) => ({ ...m, ts: m.ts + shift }))
-}
-
-/**
- * Conversations start empty. The demo script is opt-in from Settings, because a
- * real install should open on a clean thread, not somebody else's argument.
- */
-export function loadMessages() {
-  const stored = read(KEYS.messages, null)
-  if (!Array.isArray(stored)) return []
-  const fixed = reanchor(stored)
-  if (fixed !== stored) write(KEYS.messages, fixed)
-  return fixed
-}
-
-/** Settings -> "Load sample conversation": drops the scripted thread in. */
-export function loadSampleConversation() {
-  const seeded = buildSeed(Date.now())
-  write(KEYS.messages, seeded)
-  return seeded
-}
-
-export function clearConversation() {
-  write(KEYS.messages, [])
-  return []
-}
-
-export function saveMessages(messages) {
-  write(KEYS.messages, messages)
-}
 
 export function loadSettings() {
   return { ...DEFAULT_SETTINGS, ...read(KEYS.settings, {}) }
@@ -97,14 +52,6 @@ export function loadSettings() {
 
 export function saveSettings(settings) {
   write(KEYS.settings, settings)
-}
-
-export function loadSession() {
-  return { ...DEFAULT_SESSION, ...read(KEYS.session, {}) }
-}
-
-export function saveSession(session) {
-  write(KEYS.session, session)
 }
 
 /** Keeps the 12 most recent reports so the "previous scans" list stays useful. */
@@ -121,13 +68,6 @@ export function saveReport(report) {
 
 export function clearReports() {
   write(KEYS.reports, [])
-  return []
-}
-
-export function resetDemo() {
-  write(KEYS.messages, [])
-  write(KEYS.reports, [])
-  write(KEYS.aiChat, {})
   return []
 }
 
