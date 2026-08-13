@@ -5,8 +5,7 @@
 
 **[⬇️ Download the latest Android APK](https://github.com/a1wai/truematch/releases/latest/download/truematch.apk)**
 
-A private messenger for two people, with a lie & deception detector running
-quietly underneath. The chat is ordinary. The interesting part is the 🕵️‍♂️ button,
+A private messenger with a lie & deception detector running quietly underneath. The chat is ordinary. The interesting part is the 🕵️‍♂️ button,
 which reads the thread — in English *or* romanised Urdu, Hindi, Indonesian,
 Turkish or Romanian — and reports where the other person's story stops holding
 together.
@@ -23,47 +22,53 @@ npm run android:apk  # -> android/app/build/outputs/apk/debug/app-debug.apk
 
 ---
 
-## The two accounts
+## Accounts
 
-The app opens on the login screen with **Usama** and **Bisma** ready to tap — no
-password, no sign-up. Open one account on each phone and the two of you are
-talking. The scan always analyses whoever you are *not* logged in as.
+Sign up with a **username and a password**. No email, no phone number, no demo
+accounts. Usernames are unique and case-insensitive, and they are the only way
+to find anyone.
 
-Photos go in `public/avatars/usama.jpg` and `public/avatars/bisma.jpg`
-(see the README in that folder). Until they exist, coloured monograms stand in.
+**There is no password recovery.** No reset link, no security questions. If
+someone forgets their password, an admin has to reset it from the Supabase
+dashboard. The sign-up screen says this before you commit to a password.
 
-## Real-time messaging
+Every new account picks a profile picture before it can start chatting. The
+image is downscaled in the browser and stored on the profile row, so it follows
+the account onto any device.
 
-Out of the box the app runs **local-only**: messages stay in `localStorage` on
-one device, and the other side auto-replies so a solo demo still produces a
-conversation.
-
-To make two real devices talk to each other:
+## Setting up the backend
 
 1. Create a free project at [supabase.com](https://supabase.com).
-2. Open **SQL Editor** and run [`supabase/schema.sql`](supabase/schema.sql).
-3. In the app: **Settings → Realtime sync**, paste the **Project URL** and the
-   **anon public** key, and give both devices the same **room code**.
-4. Hit **Test sync**. The chat header switches from `Local` to `Live`.
+2. **SQL Editor** → run [`supabase/schema.sql`](supabase/schema.sql).
+3. **Authentication → Sign In / Providers → Email** → turn **Confirm email**
+   **off**. Accounts have no real inbox, so leaving it on makes every login fail.
+4. Put the project URL and **anon public** key into `src/lib/cloud-config.js`,
+   or set `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` as repo secrets, or
+   paste them into **Settings → Realtime sync** in the app. Settings wins, then
+   env, then the baked-in defaults.
 
-Alternatively set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` at build time
-(see `.env.example`). The in-app settings still win, which is what lets an
-already-installed APK be pointed at a project after the fact.
+Everything lives in that project: accounts, profiles, conversations, messages
+and attached photos. The only things kept on the device are app preferences,
+saved scan reports and the private AI-friend thread.
 
-What you get once it is live: messages appear on the other device instantly
-(Postgres change subscription), plus real typing indicators, presence-based
-online/last-seen, and read receipts that sync both ways.
+### How usernames turn into logins
 
-> **Be honest with yourself about the security model.** The demo policies in
-> `schema.sql` let anyone holding the anon key read and write any room — that is
-> the price of zero-friction test accounts, and the anon key ships inside the
-> APK. It is fine for you and your partner testing on two phones. It is not
-> private against a determined stranger. The file documents how to lock it down
-> with Supabase Auth when you want that.
+Supabase Auth requires an email, so the app derives a synthetic one
+(`<username>@truematch.app`) that is never shown. Password hashing, sessions and
+refresh tokens stay inside Supabase rather than being hand-rolled.
+
+### Security model, stated plainly
+
+Row-level security restricts every message to members of that conversation,
+enforced by Postgres rather than by the client — the anon key alone gets a
+stranger nothing without a valid login. Profiles (username and picture) are
+public by design, because that is what makes "add someone by username" work.
+The one loose end is documented at the bottom of `schema.sql`: any signed-in
+account can join a conversation if it can guess a UUID.
 
 ## Romanised language support
 
-Most couples do not text in clean English or clean Urdu. They text like this:
+People do not text in clean English or clean Urdu. They text like this:
 
 > *"main office mein tha, 11 baje tak, waise bhi tumhe ghalat yaad hai"*
 
@@ -97,12 +102,21 @@ language.
 - **Flagged messages** — every finding quotes the exact message, highlights the
   substring that triggered it, explains why in plain language, and links back to
   the older message it contradicts.
-- **Counter-strategy** — suggested questions, written in the language the couple
-  actually texts in, with a *Load into composer* button.
+- **Counter-strategy** — suggested questions, written in the language you both
+  actually text in, with a *Load into composer* button.
 - **Simplify this report** — one verdict line, three findings, one next step, in
   the selected language. Works offline; a configured model rewrites it better.
 
 Reports export as JSON and the last 12 are kept on the device.
+
+## The AI friend
+
+A second chat, **Zoya**, sits under your conversations. She texts like a friend
+rather than an assistant: short lines, matches whatever language you used
+including Roman Urdu, asks a follow-up instead of handing out advice. She needs
+a model key to be any good — without one she answers from a small local bank and
+says so once. Her thread is private to your account, stored on the device, and
+never part of a scan.
 
 ### How the detector works
 
@@ -122,8 +136,8 @@ Contradictions are computed across all history and then filtered so the *newer*
 statement falls inside the selected window — that is what lets "Last 24 Hours"
 surface a fresh claim that conflicts with a week-old one.
 
-The seeded conversation carries planted cues on **both** sides, so the report is
-worth reading whichever account you log in as (~85% one way, ~47% the other).
+The scan reads whatever real history exists in the open conversation, so it has
+little to say until you have actually been talking for a while.
 
 ## Android APK
 

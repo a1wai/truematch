@@ -1,84 +1,63 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AUTO_REPLIES, OTHER } from '../data/seed.js'
-import { loadMessages, saveMessages } from './storage.js'
-import { cloudConfig, getClient, isCloudConfigured, messageToRow, rowToMessage } from './supabase.js'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { getClient } from './supabase.js'
 import { uid } from './utils.js'
 
 /* ==================================================================
-   One hook, two backends.
+   One conversation, live.
 
-   'local'  — localStorage, plus the scripted auto-reply so a solo demo
-              still produces a conversation.
-   'cloud'  — Supabase Postgres + realtime, so a message typed on one
-              device shows up on the other one.
-
-   The component tree does not care which is active; it gets the same
-   messages array, send(), and typing flag either way.
+   Messages, typing broadcasts, presence and read receipts all ride the
+   same realtime channel. Everything is stored in Supabase — nothing
+   about a conversation lives only on the device.
    ================================================================== */
 
-const SIMULATED_TYPING_MS = 1100
-const SIMULATED_REPLY_MS = 3400
+function rowToMessage(row) {
+  return {
+    id: row.id,
+    from: row.sender,
+    text: row.body || '',
+    ts: new Date(row.created_at).getTime(),
+    status: row.status || 'sent',
+    attachment: row.attachment || null,
+  }
+}
 
-export function useChat({ settings, userId }) {
-  const [messages, setMessages] = useState(() => loadMessages())
+export function useChat({ settings, profile, conversationId }) {
+  const [messages, setMessages] = useState([])
   const [partnerTyping, setPartnerTyping] = useState(false)
   const [partnerOnline, setPartnerOnline] = useState(false)
-  const [status, setStatus] = useState('local') // local | connecting | live | error
+  const [status, setStatus] = useState('idle') // idle | connecting | live | error
   const [error, setError] = useState(null)
-
   const [attempt, setAttempt] = useState(0)
+
   const channelRef = useRef(null)
   const retryRef = useRef(null)
-  const timers = useRef([])
-  const cloud = isCloudConfigured(settings)
-  const { room } = useMemo(() => cloudConfig(settings), [settings])
-
-  const later = useCallback((fn, ms) => {
-    const id = setTimeout(fn, ms)
-    timers.current.push(id)
-    return id
-  }, [])
+  const typingClearRef = useRef(null)
 
   useEffect(
     () => () => {
-      timers.current.forEach(clearTimeout)
-      timers.current = []
       clearTimeout(retryRef.current)
+      clearTimeout(typingClearRef.current)
     },
     [],
   )
 
-  /**
-   * Phones lose signal in lifts, tunnels and dead zones. Back off and try
-   * again rather than sitting in a broken state until the app is restarted.
-   */
+  /** Phones lose signal. Back off and retry instead of staying broken. */
   const scheduleRetry = useCallback((n) => {
     clearTimeout(retryRef.current)
     const delay = Math.min(60000, 5000 * 2 ** Math.min(n, 4))
     retryRef.current = setTimeout(() => setAttempt((a) => a + 1), delay)
   }, [])
 
-  /* ---------------- local persistence ---------------- */
-
-  // Persist in both modes. In cloud mode this is an offline cache: a phone on a
-  // dead connection still opens on its history instead of an empty thread.
   useEffect(() => {
-    saveMessages(messages)
-  }, [messages])
-
-  /* ---------------- cloud connection ---------------- */
-
-  useEffect(() => {
-    if (!cloud || !userId) {
-      setStatus('local')
+    const supabase = getClient(settings)
+    if (!supabase || !profile || !conversationId) {
+      setMessages([])
+      setStatus('idle')
       return undefined
     }
 
-    const client = getClient(settings)
-    if (!client) return undefined
-
     let cancelled = false
-    setStatus(attempt === 0 ? 'connecting' : 'reconnecting')
+    setStatus('connecting')
     setError(null)
 
     const upsert = (incoming) =>
@@ -89,36 +68,32 @@ export function useChat({ settings, userId }) {
       })
 
     async function connect() {
-      const { data, error: loadError } = await client
+      const { data, error: loadError } = await supabase
         .from('messages')
         .select('*')
-        .eq('room', room)
+        .eq('conversation_id', conversationId)
         .order('created_at', { ascending: true })
         .limit(1000)
 
       if (cancelled) return
       if (loadError) {
-        // Keep whatever is cached locally rather than blanking the screen.
         setError(loadError.message)
         setStatus('error')
         scheduleRetry(attempt)
         return
       }
+      setMessages(data.map(rowToMessage))
 
-      // Server is the source of truth, but anything that failed to send stays
-      // visible so the user can see it did not go through.
-      const remote = data.map(rowToMessage)
-      const remoteIds = new Set(remote.map((m) => m.id))
-      setMessages((prev) => {
-        const unsent = prev.filter((m) => m.status === 'failed' && !remoteIds.has(m.id))
-        return [...remote, ...unsent].sort((x, y) => x.ts - y.ts)
-      })
-
-      const channel = client
-        .channel(`room:${room}`, { config: { presence: { key: userId } } })
+      const channel = supabase
+        .channel(`conv:${conversationId}`, { config: { presence: { key: profile.id } } })
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'messages', filter: `room=eq.${room}` },
+          {
+            event: '*',
+            schema: 'public',
+            table: 'messages',
+            filter: `conversation_id=eq.${conversationId}`,
+          },
           (payload) => {
             if (payload.eventType === 'DELETE') {
               setMessages((prev) => prev.filter((m) => m.id !== payload.old?.id))
@@ -128,14 +103,16 @@ export function useChat({ settings, userId }) {
           },
         )
         .on('broadcast', { event: 'typing' }, ({ payload }) => {
-          if (payload?.from === userId) return
+          if (payload?.from === profile.id) return
           setPartnerTyping(Boolean(payload?.typing))
-          if (payload?.typing) later(() => setPartnerTyping(false), 6000)
+          clearTimeout(typingClearRef.current)
+          if (payload?.typing) {
+            typingClearRef.current = setTimeout(() => setPartnerTyping(false), 6000)
+          }
         })
         .on('presence', { event: 'sync' }, () => {
           const state = channel.presenceState()
-          const others = Object.keys(state).filter((k) => k !== userId)
-          setPartnerOnline(others.length > 0)
+          setPartnerOnline(Object.keys(state).some((k) => k !== profile.id))
         })
 
       channel.subscribe((state) => {
@@ -144,10 +121,10 @@ export function useChat({ settings, userId }) {
           clearTimeout(retryRef.current)
           setAttempt(0)
           setStatus('live')
-          channel.track({ user: userId, at: Date.now() })
+          channel.track({ user: profile.id, at: Date.now() })
         } else if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT') {
           setStatus('error')
-          setError('Realtime channel dropped')
+          setError('Connection dropped')
           scheduleRetry(attempt)
         }
       })
@@ -166,117 +143,73 @@ export function useChat({ settings, userId }) {
       cancelled = true
       const channel = channelRef.current
       channelRef.current = null
-      if (channel) client.removeChannel(channel)
-      setPartnerOnline(false)
+      if (channel) supabase.removeChannel(channel)
       setPartnerTyping(false)
+      setPartnerOnline(false)
     }
-  }, [cloud, room, settings, userId, later, attempt, scheduleRetry])
-
-  /* ---------------- actions ---------------- */
+  }, [settings, profile, conversationId, attempt, scheduleRetry])
 
   const send = useCallback(
     async (text, attachment = null) => {
-      if (!userId) return
+      const supabase = getClient(settings)
+      if (!supabase || !profile || !conversationId) return
       if (!text?.trim() && !attachment) return
+
       const message = {
         id: uid('msg'),
-        from: userId,
+        from: profile.id,
         text: text?.trim() || '',
         ts: Date.now(),
         status: 'sent',
         attachment,
       }
-
-      if (cloud) {
-        // Optimistic: the row echoes back through the realtime subscription and
-        // replaces this one by id.
-        setMessages((prev) => [...prev, message])
-        const client = getClient(settings)
-        const { error: sendError } = await client.from('messages').insert(messageToRow(message, room))
-        if (sendError) {
-          setError(sendError.message)
-          setStatus('error')
-          scheduleRetry(0)
-          setMessages((prev) =>
-            prev.map((m) => (m.id === message.id ? { ...m, status: 'failed' } : m)),
-          )
-        }
-        return
-      }
-
+      // Optimistic; the realtime echo replaces it by id.
       setMessages((prev) => [...prev, message])
-      later(
-        () =>
-          setMessages((prev) =>
-            prev.map((m) => (m.id === message.id ? { ...m, status: 'delivered' } : m)),
-          ),
-        700,
-      )
 
-      if (!settings.simulateReplies) return
-      later(() => setPartnerTyping(true), SIMULATED_TYPING_MS)
-      later(() => {
-        setPartnerTyping(false)
-        setMessages((prev) => [
-          ...prev.map((m) => (m.id === message.id ? { ...m, status: 'read' } : m)),
-          {
-            id: uid('msg'),
-            from: OTHER[userId],
-            text: AUTO_REPLIES[Math.floor(Math.random() * AUTO_REPLIES.length)],
-            ts: Date.now(),
-            status: 'delivered',
-            attachment: null,
-          },
-        ])
-      }, SIMULATED_REPLY_MS)
+      const { error: sendError } = await supabase.from('messages').insert({
+        id: message.id,
+        conversation_id: conversationId,
+        sender: profile.id,
+        body: message.text,
+        attachment,
+        status: 'sent',
+        created_at: new Date(message.ts).toISOString(),
+      })
+
+      if (sendError) {
+        setError(sendError.message)
+        setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, status: 'failed' } : m)))
+      }
     },
-    [cloud, later, room, settings, userId, scheduleRetry],
+    [settings, profile, conversationId],
   )
 
-  /** Broadcast-only; never persisted. */
   const setTyping = useCallback(
     (isTyping) => {
-      if (!cloud) return
       channelRef.current?.send({
         type: 'broadcast',
         event: 'typing',
-        payload: { from: userId, typing: isTyping },
+        payload: { from: profile?.id, typing: isTyping },
       })
     },
-    [cloud, userId],
+    [profile],
   )
 
-  /** Everything addressed to the current viewer counts as read. */
   const markRead = useCallback(async () => {
-    if (!userId) return
-    const unread = messages.filter((m) => m.from !== userId && m.status !== 'read')
+    const supabase = getClient(settings)
+    if (!supabase || !profile || !conversationId) return
+    const unread = messages.filter((m) => m.from !== profile.id && m.status !== 'read')
     if (!unread.length) return
     setMessages((prev) =>
-      prev.map((m) => (m.from !== userId && m.status !== 'read' ? { ...m, status: 'read' } : m)),
+      prev.map((m) => (m.from !== profile.id && m.status !== 'read' ? { ...m, status: 'read' } : m)),
     )
-    if (!cloud) return
-    const client = getClient(settings)
-    await client
+    await supabase
       .from('messages')
       .update({ status: 'read' })
-      .eq('room', room)
-      .neq('sender', userId)
+      .eq('conversation_id', conversationId)
+      .neq('sender', profile.id)
       .neq('status', 'read')
-  }, [cloud, messages, room, settings, userId])
+  }, [settings, profile, conversationId, messages])
 
-  const replaceLocal = useCallback((next) => setMessages(next), [])
-
-  return {
-    messages,
-    send,
-    setTyping,
-    markRead,
-    replaceLocal,
-    partnerTyping,
-    partnerOnline,
-    status,
-    error,
-    mode: cloud ? 'cloud' : 'local',
-    room,
-  }
+  return { messages, send, setTyping, markRead, partnerTyping, partnerOnline, status, error }
 }

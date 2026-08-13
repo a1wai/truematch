@@ -48,12 +48,14 @@ function TypingIndicator({ user }) {
           />
         ))}
       </div>
-      <span className="pb-1 text-[11px] text-tm-muted">{user.name} is typing…</span>
+      <span className="pb-1 text-[11px] text-tm-muted">
+        {user.name || `@${user.username}`} is typing…
+      </span>
     </motion.div>
   )
 }
 
-function EmptyState({ partner, isAI }) {
+function EmptyState({ partner, partnerName, isAI }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-8 py-16 text-center">
       <span className="relative mb-5 grid h-20 w-20 place-items-center">
@@ -68,7 +70,7 @@ function EmptyState({ partner, isAI }) {
         )}
       </span>
       <p className="text-[15px] font-semibold text-tm-text">
-        {isAI ? `Say hi to ${partner.name}` : `No messages with ${partner.name} yet`}
+        {isAI ? `Say hi to ${partnerName}` : `No messages with ${partnerName} yet`}
       </p>
       <p className="mt-2 max-w-xs text-[13px] leading-relaxed text-tm-muted">
         {isAI
@@ -95,10 +97,11 @@ export default function ChatWindow({
   onBack,
   online = false,
   live = false,
-  room,
+  connectionError = false,
   onTypingChange,
   isAI = false,
 }) {
+  const partnerName = partner.name || `@${partner.username}`
   const [draft, setDraft] = useState('')
   const [atBottom, setAtBottom] = useState(true)
   const [emojiOpen, setEmojiOpen] = useState(false)
@@ -269,7 +272,7 @@ export default function ChatWindow({
         <Avatar user={partner} size="md" online={online} ring={online} />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 truncate text-[15px] font-medium text-tm-text">
-            {partner.name}
+            {partnerName}
             {isAI && (
               <span className="rounded bg-tm-rose/15 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-tm-rose-bright">
                 AI
@@ -291,12 +294,16 @@ export default function ChatWindow({
           <span
             className={cn(
               'hidden shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-[10.5px] font-medium lg:inline-flex',
-              live ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300' : 'border-white/10 text-tm-muted',
+              live
+                ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                : connectionError
+                  ? 'border-amber-400/30 bg-amber-400/10 text-amber-300'
+                  : 'border-white/10 text-tm-muted',
             )}
-            title={live ? `Live sync · room ${room}` : 'Offline — messages stay on this device'}
+            title={live ? 'Connected' : connectionError ? 'Reconnecting' : 'Connecting'}
           >
             {live ? <Cloud className="h-3.5 w-3.5" /> : <CloudOff className="h-3.5 w-3.5" />}
-            {live ? 'Live' : 'Local'}
+            {live ? 'Live' : connectionError ? 'Offline' : '…'}
           </span>
         )}
 
@@ -377,7 +384,7 @@ export default function ChatWindow({
       {/* Feed */}
       <div ref={scrollRef} className="chat-wallpaper flex flex-1 flex-col overflow-y-auto overflow-x-hidden py-3">
         {messages.length === 0 ? (
-          <EmptyState partner={partner} isAI={isAI} />
+          <EmptyState partner={partner} partnerName={partnerName} isAI={isAI} />
         ) : (
           <div className="mx-auto flex w-full max-w-4xl flex-col gap-0.5">
             {rows.map((row) =>
@@ -421,6 +428,12 @@ export default function ChatWindow({
           </motion.button>
         )}
       </AnimatePresence>
+
+      {!isAI && connectionError && (
+        <p className="shrink-0 bg-amber-500/15 px-4 py-1.5 text-center text-[11.5px] text-amber-200">
+          Offline — reconnecting…
+        </p>
+      )}
 
       {attachError && (
         <p className="bg-rose-500/15 px-4 py-1.5 text-center text-[11.5px] text-rose-200">{attachError}</p>
@@ -477,7 +490,7 @@ export default function ChatWindow({
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) send(e)
           }}
-          placeholder={isAI ? `Message ${partner.name}…` : 'Type a message…'}
+          placeholder={isAI ? `Message ${partnerName}…` : 'Type a message…'}
           className="max-h-32 min-h-[44px] flex-1 resize-none rounded-2xl bg-tm-panel-2 px-4 py-3 text-[15px] text-tm-text placeholder:text-tm-muted/70 focus:outline-none focus:ring-1 focus:ring-tm-rose/40"
         />
 

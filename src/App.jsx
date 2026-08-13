@@ -1,27 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import confetti from 'canvas-confetti'
-import { OTHER, USERS } from './data/seed.js'
-import { COMPANION } from './lib/companion.js'
-import { useAiChat } from './lib/use-ai-chat.js'
+import { Heart } from 'lucide-react'
 import { analyzeConversation, TIMEFRAMES } from './lib/analysis.js'
 import { runLiveAnalysis, simplifyReport } from './lib/ai.js'
+import { COMPANION } from './lib/companion.js'
 import { resolveLanguage } from './lib/languages.js'
 import { buildPlainSummary } from './lib/report.js'
+import { loadReports, loadSettings, saveReport, saveSettings, wipeEverything } from './lib/storage.js'
+import { useAiChat } from './lib/use-ai-chat.js'
 import { useChat } from './lib/use-chat.js'
-import {
-  loadReports,
-  loadSampleConversation,
-  loadSession,
-  loadSettings,
-  resetDemo,
-  saveReport,
-  saveSession,
-  saveSettings,
-  wipeEverything,
-} from './lib/storage.js'
+import { useConversations } from './lib/use-conversations.js'
+import { useSession } from './lib/use-session.js'
+import AddUserSheet from './components/AddUserSheet.jsx'
+import AuthScreen from './components/AuthScreen.jsx'
+import AvatarSetup from './components/AvatarSetup.jsx'
 import ChatWindow from './components/ChatWindow.jsx'
-import Login from './components/Login.jsx'
-import PerspectiveBar from './components/PerspectiveBar.jsx'
+import MenuSheet from './components/MenuSheet.jsx'
 import ScanModal from './components/ScanModal.jsx'
 import SettingsModal from './components/SettingsModal.jsx'
 import Sidebar from './components/Sidebar.jsx'
@@ -29,40 +23,41 @@ import Sidebar from './components/Sidebar.jsx'
 const MIN_SCAN_MS = 1900
 
 export default function App() {
-  const [session, setSession] = useState(() => loadSession())
   const [settings, setSettings] = useState(() => loadSettings())
-  const [reportCount, setReportCount] = useState(() => loadReports().length)
+  const session = useSession({ settings })
+  const { profile } = session
+
+  const [activeChat, setActiveChat] = useState(null) // conversation id | 'ai' | null
+  const [mobilePane, setMobilePane] = useState('list')
+  const [addOpen, setAddOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const [scanOpen, setScanOpen] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [report, setReport] = useState(null)
   const [liveError, setLiveError] = useState(null)
   const [timeframe, setTimeframe] = useState('all')
-
+  const [reportCount, setReportCount] = useState(() => loadReports().length)
   const [plain, setPlain] = useState(null)
   const [simplified, setSimplified] = useState(false)
   const [simplifying, setSimplifying] = useState(false)
 
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [focusMessageId, setFocusMessageId] = useState(null)
   const [injectedDraft, setInjectedDraft] = useState(null)
-  const [mobilePane, setMobilePane] = useState('list')
-  const [activeChat, setActiveChat] = useState('partner')
 
-  const viewingAs = session.viewingAs
-  const partnerId = viewingAs ? OTHER[viewingAs] : null
-
-  const chat = useChat({ settings, userId: viewingAs })
-  const { messages } = chat
-  const ai = useAiChat({
-    settings,
-    userId: viewingAs,
-    userName: viewingAs ? USERS[viewingAs].name : '',
-  })
+  const inbox = useConversations({ settings, profile })
   const onAiChat = activeChat === 'ai'
+  const conversationId = onAiChat ? null : activeChat
+  const chat = useChat({ settings, profile, conversationId })
+  const ai = useAiChat({ settings, userId: profile?.id, userName: profile?.username || '' })
 
-  // Stealth mode is the single source of truth for whether the chat feed shows
-  // flag markers, so the report footer and the settings toggle cannot disagree.
+  const activeConversation = useMemo(
+    () => inbox.conversations.find((c) => c.id === activeChat) || null,
+    [inbox.conversations, activeChat],
+  )
+  const partner = onAiChat ? COMPANION : activeConversation?.other || null
+
   const revealFlags = !settings.stealthMode
   const toggleReveal = () => setSettings((s) => ({ ...s, stealthMode: !s.stealthMode }))
 
@@ -75,26 +70,19 @@ export default function App() {
   useEffect(() => () => timers.current.forEach(clearTimeout), [])
 
   useEffect(() => saveSettings(settings), [settings])
-  useEffect(() => saveSession(session), [session])
 
-  // Opening the thread as someone marks everything addressed to them as read.
   useEffect(() => {
-    if (!viewingAs) return
-    chat.markRead()
+    if (conversationId) chat.markRead()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewingAs, messages.length])
+  }, [conversationId, chat.messages.length])
 
   /* ---------------------------------------------------------------- */
-
-  const handleLogin = (userId) => {
-    setSession({ userId, viewingAs: userId })
-    setMobilePane('list')
-    setActiveChat('partner')
-  }
 
   const openChat = (id) => {
     setActiveChat(id)
     setMobilePane('chat')
+    setReport(null)
+    setPlain(null)
   }
 
   const closeReport = () => {
@@ -102,26 +90,28 @@ export default function App() {
     setSimplified(false)
   }
 
-  const handleSwitch = () => {
-    setSession((s) => ({ ...s, viewingAs: OTHER[s.viewingAs] }))
-    setReport(null)
-    setPlain(null)
+  const handleSignOut = async () => {
+    setMenuOpen(false)
+    setSettingsOpen(false)
     closeReport()
+    setActiveChat(null)
+    setMobilePane('list')
+    await session.signOut()
   }
 
-  const handleLogout = () => {
-    setSession({ userId: null, viewingAs: null })
-    setReport(null)
-    setPlain(null)
-    closeReport()
+  const handleStartWith = async (person) => {
+    const id = await inbox.startWith(person.id)
+    setAddOpen(false)
+    openChat(id)
   }
 
   /* ---------------------------------------------------------------- */
 
+  const messages = onAiChat ? ai.messages : chat.messages
+
   const runScan = useCallback(
     async (tf = timeframe, langOverride) => {
-      if (!viewingAs) return
-      const target = OTHER[viewingAs]
+      if (!partner || onAiChat) return
       setScanning(true)
       setLiveError(null)
       setScanOpen(true)
@@ -132,14 +122,15 @@ export default function App() {
       const languageSetting = langOverride ?? settings.reportLanguage
       const language = resolveLanguage(
         languageSetting,
-        messages.map((m) => m.text).filter(Boolean),
+        chat.messages.map((m) => m.text).filter(Boolean),
       )
+      const targetName = `@${partner.username}`
 
       const base = {
         ...analyzeConversation({
-          messages,
-          targetId: target,
-          targetName: USERS[target].name,
+          messages: chat.messages,
+          targetId: partner.id,
+          targetName,
           timeframe: tf,
         }),
         language,
@@ -152,10 +143,10 @@ export default function App() {
         const windowStart = span === Infinity ? -Infinity : Date.now() - span
         try {
           const live = await runLiveAnalysis({
-            messages: messages.filter((m) => m.ts >= windowStart),
-            targetId: target,
-            targetName: USERS[target].name,
-            viewerName: USERS[viewingAs].name,
+            messages: chat.messages.filter((m) => m.ts >= windowStart),
+            targetId: partner.id,
+            targetName,
+            viewerName: `@${profile.username}`,
             language,
             settings,
           })
@@ -163,7 +154,8 @@ export default function App() {
           final = {
             ...base,
             engine: 'live model',
-            language: live.detectedLanguage && languageSetting === 'auto' ? live.detectedLanguage : language,
+            language:
+              live.detectedLanguage && languageSetting === 'auto' ? live.detectedLanguage : language,
             summary: live.summary,
             summaryLocal: live.summaryLocal,
             risk: live.risk == null ? base.risk : Math.round((live.risk + base.risk) / 2),
@@ -184,7 +176,7 @@ export default function App() {
           setReport(final)
           setScanning(false)
           setReportCount(saveReport(final).length)
-          if (final.risk < 25) {
+          if (final.risk < 25 && final.flags.length) {
             confetti({
               particleCount: 90,
               spread: 70,
@@ -197,29 +189,16 @@ export default function App() {
         Math.max(0, MIN_SCAN_MS - elapsed),
       )
     },
-    [messages, settings, timeframe, viewingAs, later],
+    [chat.messages, settings, timeframe, partner, profile, onAiChat, later],
   )
 
-  const handleTimeframe = (tf) => {
-    setTimeframe(tf)
-    runScan(tf)
-  }
-
-  const handleLanguage = (lang) => {
-    setSettings((s) => ({ ...s, reportLanguage: lang }))
-    runScan(timeframe, lang)
-  }
-
-  /**
-   * Simplify always produces something: the local summary renders instantly,
-   * and a configured model then replaces it with a better-written version.
-   */
   const handleSimplify = async () => {
-    if (!report) return
-    const targetName = USERS[OTHER[viewingAs]].name
+    if (!report || !partner) return
+    const targetName = `@${partner.username}`
     setSimplified(true)
-    setPlain(buildPlainSummary({ report, language: report.language, targetName, messages }))
-
+    setPlain(
+      buildPlainSummary({ report, language: report.language, targetName, messages: chat.messages }),
+    )
     if (!settings.useLiveAI || !(settings.apiKey || settings.provider === 'custom')) return
     setSimplifying(true)
     try {
@@ -244,7 +223,6 @@ export default function App() {
 
   const handleJump = (messageId) => {
     closeReport()
-    setActiveChat('partner')
     setMobilePane('chat')
     setFocusMessageId(messageId)
     later(() => setFocusMessageId(null), 2600)
@@ -253,26 +231,7 @@ export default function App() {
   const handleUseLine = (line) => {
     setInjectedDraft(line)
     closeReport()
-    setActiveChat('partner')
     setMobilePane('chat')
-  }
-
-  const handleLoadSample = () => {
-    chat.replaceLocal(loadSampleConversation())
-    setReport(null)
-    setPlain(null)
-    setSettingsOpen(false)
-    setActiveChat('partner')
-    setMobilePane('chat')
-  }
-
-  const handleResetDemo = () => {
-    chat.replaceLocal(resetDemo())
-    ai.clear()
-    setReport(null)
-    setPlain(null)
-    setReportCount(0)
-    setSettingsOpen(false)
   }
 
   const handleWipe = () => {
@@ -281,8 +240,7 @@ export default function App() {
     setReport(null)
     setPlain(null)
     setReportCount(0)
-    chat.replaceLocal(resetDemo())
-    setSession({ userId: null, viewingAs: null })
+    ai.clear()
   }
 
   /* ---------------------------------------------------------------- */
@@ -297,96 +255,152 @@ export default function App() {
     return map
   }, [report])
 
-  if (!session.userId || !viewingAs) return <Login onLogin={handleLogin} settings={settings} />
+  /* ------------------------- screens ------------------------- */
+
+  if (session.stage === 'loading') {
+    return (
+      <div className="grid h-dvh place-items-center bg-tm-bg">
+        <Heart
+          className="h-10 w-10 fill-tm-rose text-tm-rose"
+          style={{ animation: 'heartbeat 2.6s ease-in-out infinite' }}
+        />
+      </div>
+    )
+  }
+
+  if (session.stage === 'auth' || !profile) {
+    return (
+      <AuthScreen
+        onSignIn={session.signIn}
+        onSignUp={session.signUp}
+        configError={session.error}
+      />
+    )
+  }
+
+  if (session.stage === 'avatar') {
+    return (
+      <AvatarSetup
+        username={profile.username}
+        onSave={session.saveAvatar}
+        onSignOut={handleSignOut}
+      />
+    )
+  }
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-tm-bg">
-      <PerspectiveBar
-        viewingAs={viewingAs}
-        onSwitch={handleSwitch}
-        onLogout={handleLogout}
-        onSettings={() => setSettingsOpen(true)}
-        connection={chat.status}
-      />
-
-      {/* Plain language, and only where it is relevant — the AI thread is local. */}
-      {!onAiChat && chat.status === 'error' && (
-        <p
-          className="bg-amber-500/15 px-4 py-1.5 text-center text-[11.5px] text-amber-200"
-          title={chat.error || ''}
-        >
-          Offline — your messages are saved here and will sync when you reconnect
-        </p>
-      )}
-
       <div className="flex min-h-0 flex-1">
         <Sidebar
-          messages={messages}
+          profile={profile}
+          conversations={inbox.conversations}
+          loading={inbox.loading}
           aiMessages={ai.messages}
-          viewingAs={viewingAs}
-          partner={USERS[partnerId]}
           companion={COMPANION}
           activeChat={activeChat}
           onSelectChat={openChat}
+          onAddUser={() => setAddOpen(true)}
+          onOpenMenu={() => setMenuOpen(true)}
           className={mobilePane === 'list' ? 'flex md:flex' : 'hidden md:flex'}
         />
-        <div className={mobilePane === 'list' ? 'hidden min-w-0 flex-1 md:flex' : 'flex min-w-0 flex-1'}>
-          <ChatWindow
-            key={activeChat}
-            isAI={onAiChat}
-            messages={onAiChat ? ai.messages : messages}
-            viewingAs={viewingAs}
-            partner={onAiChat ? COMPANION : USERS[partnerId]}
-            typing={onAiChat ? ai.typing : chat.partnerTyping}
-            online={onAiChat ? true : chat.mode === 'cloud' ? chat.partnerOnline : true}
-            live={chat.status === 'live'}
-            room={chat.room}
-            onTypingChange={onAiChat ? undefined : chat.setTyping}
-            onSend={onAiChat ? ai.send : chat.send}
-            onOpenScan={() => runScan(timeframe)}
-            flaggedIds={flaggedIds}
-            highlightsById={highlightsById}
-            revealFlags={revealFlags}
-            focusMessageId={focusMessageId}
-            injectedDraft={injectedDraft}
-            onDraftConsumed={() => setInjectedDraft(null)}
-            onBack={() => setMobilePane('list')}
-          />
+
+        <div
+          className={
+            mobilePane === 'list' ? 'hidden min-w-0 flex-1 md:flex' : 'flex min-w-0 flex-1'
+          }
+        >
+          {partner ? (
+            <ChatWindow
+              key={activeChat}
+              isAI={onAiChat}
+              messages={messages}
+              viewingAs={onAiChat ? profile.id : profile.id}
+              partner={partner}
+              typing={onAiChat ? ai.typing : chat.partnerTyping}
+              online={onAiChat ? true : chat.partnerOnline}
+              live={onAiChat ? false : chat.status === 'live'}
+              connectionError={onAiChat ? null : chat.status === 'error'}
+              onTypingChange={onAiChat ? undefined : chat.setTyping}
+              onSend={onAiChat ? ai.send : chat.send}
+              onOpenScan={() => runScan(timeframe)}
+              flaggedIds={flaggedIds}
+              highlightsById={highlightsById}
+              revealFlags={revealFlags}
+              focusMessageId={focusMessageId}
+              injectedDraft={injectedDraft}
+              onDraftConsumed={() => setInjectedDraft(null)}
+              onBack={() => setMobilePane('list')}
+            />
+          ) : (
+            <div className="hidden flex-1 flex-col items-center justify-center gap-3 bg-tm-bg px-8 text-center md:flex">
+              <Heart className="h-10 w-10 text-tm-rose/40" />
+              <p className="text-[15px] font-medium text-tm-text">Pick a chat</p>
+              <p className="max-w-xs text-[13px] leading-relaxed text-tm-muted">
+                Or add someone by username to start a new conversation.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
-      <ScanModal
-        open={scanOpen}
-        scanning={scanning}
-        report={report}
-        messages={messages}
-        targetName={USERS[partnerId].name}
-        timeframe={timeframe}
-        onTimeframe={handleTimeframe}
-        language={settings.reportLanguage}
-        onLanguage={handleLanguage}
-        plain={plain}
-        simplified={simplified}
-        simplifying={simplifying}
-        onSimplify={handleSimplify}
-        onFullReport={() => setSimplified(false)}
-        onClose={closeReport}
-        onRescan={() => runScan(timeframe)}
-        onJump={handleJump}
-        onUseLine={handleUseLine}
-        revealFlags={revealFlags}
-        onToggleReveal={toggleReveal}
-        liveError={liveError}
-        savedCount={reportCount}
+      <AddUserSheet
+        open={addOpen}
+        settings={settings}
+        profile={profile}
+        onClose={() => setAddOpen(false)}
+        onStart={handleStartWith}
       />
+
+      <MenuSheet
+        open={menuOpen}
+        profile={profile}
+        onClose={() => setMenuOpen(false)}
+        onOpenSettings={() => {
+          setMenuOpen(false)
+          setSettingsOpen(true)
+        }}
+        onSignOut={handleSignOut}
+        onSaveAvatar={session.saveAvatar}
+      />
+
+      {partner && !onAiChat && (
+        <ScanModal
+          open={scanOpen}
+          scanning={scanning}
+          report={report}
+          messages={chat.messages}
+          targetName={`@${partner.username}`}
+          timeframe={timeframe}
+          onTimeframe={(tf) => {
+            setTimeframe(tf)
+            runScan(tf)
+          }}
+          language={settings.reportLanguage}
+          onLanguage={(lang) => {
+            setSettings((s) => ({ ...s, reportLanguage: lang }))
+            runScan(timeframe, lang)
+          }}
+          plain={plain}
+          simplified={simplified}
+          simplifying={simplifying}
+          onSimplify={handleSimplify}
+          onFullReport={() => setSimplified(false)}
+          onClose={closeReport}
+          onRescan={() => runScan(timeframe)}
+          onJump={handleJump}
+          onUseLine={handleUseLine}
+          revealFlags={revealFlags}
+          onToggleReveal={toggleReveal}
+          liveError={liveError}
+          savedCount={reportCount}
+        />
+      )}
 
       <SettingsModal
         open={settingsOpen}
         settings={settings}
         onChange={setSettings}
         onClose={() => setSettingsOpen(false)}
-        onResetDemo={handleResetDemo}
-        onLoadSample={handleLoadSample}
         onWipe={handleWipe}
       />
     </div>

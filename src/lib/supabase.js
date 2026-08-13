@@ -13,8 +13,6 @@ import { BAKED_SUPABASE_ANON_KEY, BAKED_SUPABASE_URL, normalizeSupabaseUrl } fro
    able to point it at a project after the fact.
    ================================================================== */
 
-export const DEFAULT_ROOM = 'TRUEMATCH-DEMO'
-
 export function cloudConfig(settings = {}) {
   const url = normalizeSupabaseUrl(
     settings.supabaseUrl || import.meta.env.VITE_SUPABASE_URL || BAKED_SUPABASE_URL,
@@ -25,13 +23,33 @@ export function cloudConfig(settings = {}) {
     BAKED_SUPABASE_ANON_KEY ||
     ''
   ).trim()
-  const room = (settings.roomCode || DEFAULT_ROOM).trim().toUpperCase()
-  return { url, key, room }
+  return { url, key }
 }
 
 export function isCloudConfigured(settings) {
   const { url, key } = cloudConfig(settings)
   return Boolean(url && key && /^https?:\/\//.test(url))
+}
+
+const REQUEST_TIMEOUT_MS = 20000
+
+/**
+ * Without this, a phone on a dead connection leaves the sign-in button
+ * spinning forever — supabase-js has no default timeout of its own.
+ */
+async function fetchWithTimeout(input, init = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    return await fetch(input, { ...init, signal: controller.signal })
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error('The server did not respond — check your connection and try again')
+    }
+    throw new Error('Could not reach the server — check your connection')
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 let cached = { signature: null, client: null }
@@ -45,48 +63,23 @@ export function getClient(settings) {
   cached = {
     signature,
     client: createClient(url, key, {
-      auth: { persistSession: false, autoRefreshToken: false },
+      // Sessions must persist: an installed APK should reopen already signed in.
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
       realtime: { params: { eventsPerSecond: 10 } },
+      global: { fetch: fetchWithTimeout },
     }),
   }
   return cached.client
-}
-
-/** Database row -> the message shape the UI already speaks. */
-export function rowToMessage(row) {
-  return {
-    id: row.id,
-    from: row.sender,
-    text: row.body || '',
-    ts: new Date(row.created_at).getTime(),
-    status: row.status || 'sent',
-    attachment: row.attachment || null,
-    remote: true,
-  }
-}
-
-export function messageToRow(message, room) {
-  return {
-    id: message.id,
-    room,
-    sender: message.from,
-    body: message.text,
-    attachment: message.attachment,
-    status: message.status || 'sent',
-    created_at: new Date(message.ts).toISOString(),
-  }
 }
 
 /** Quick reachability probe for the Settings "Test connection" button. */
 export async function testCloud(settings) {
   const client = getClient(settings)
   if (!client) throw new Error('Add a project URL and anon key first')
-  const { room } = cloudConfig(settings)
   const started = performance.now()
   const { error, count } = await client
-    .from('messages')
+    .from('profiles')
     .select('id', { count: 'exact', head: true })
-    .eq('room', room)
   if (error) throw new Error(error.message)
-  return { ms: Math.round(performance.now() - started), count: count ?? 0, room }
+  return { ms: Math.round(performance.now() - started), count: count ?? 0 }
 }
