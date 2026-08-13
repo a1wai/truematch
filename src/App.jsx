@@ -1,21 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import confetti from 'canvas-confetti'
-import { OTHER, USERS, AUTO_REPLIES } from './data/seed.js'
+import { OTHER, USERS } from './data/seed.js'
 import { analyzeConversation, TIMEFRAMES } from './lib/analysis.js'
-import { runLiveAnalysis } from './lib/ai.js'
+import { runLiveAnalysis, simplifyReport } from './lib/ai.js'
+import { resolveLanguage } from './lib/languages.js'
+import { buildPlainSummary } from './lib/report.js'
+import { useChat } from './lib/use-chat.js'
 import {
-  loadMessages,
   loadReports,
   loadSession,
   loadSettings,
   resetDemo,
-  saveMessages,
   saveReport,
   saveSession,
   saveSettings,
   wipeEverything,
 } from './lib/storage.js'
-import { uid } from './lib/utils.js'
 import ChatWindow from './components/ChatWindow.jsx'
 import Login from './components/Login.jsx'
 import PerspectiveBar from './components/PerspectiveBar.jsx'
@@ -27,7 +27,6 @@ const MIN_SCAN_MS = 1900
 
 export default function App() {
   const [session, setSession] = useState(() => loadSession())
-  const [messages, setMessages] = useState(() => loadMessages())
   const [settings, setSettings] = useState(() => loadSettings())
   const [reportCount, setReportCount] = useState(() => loadReports().length)
 
@@ -37,14 +36,23 @@ export default function App() {
   const [liveError, setLiveError] = useState(null)
   const [timeframe, setTimeframe] = useState('all')
 
+  const [plain, setPlain] = useState(null)
+  const [simplified, setSimplified] = useState(false)
+  const [simplifying, setSimplifying] = useState(false)
+
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [typing, setTyping] = useState(false)
   const [focusMessageId, setFocusMessageId] = useState(null)
   const [injectedDraft, setInjectedDraft] = useState(null)
   const [mobilePane, setMobilePane] = useState('chat')
 
+  const viewingAs = session.viewingAs
+  const partnerId = viewingAs ? OTHER[viewingAs] : null
+
+  const chat = useChat({ settings, userId: viewingAs })
+  const { messages } = chat
+
   // Stealth mode is the single source of truth for whether the chat feed shows
-  // flag markers, so the report footer and the settings toggle can never disagree.
+  // flag markers, so the report footer and the settings toggle cannot disagree.
   const revealFlags = !settings.stealthMode
   const toggleReveal = () => setSettings((s) => ({ ...s, stealthMode: !s.stealthMode }))
 
@@ -56,92 +64,68 @@ export default function App() {
   }, [])
   useEffect(() => () => timers.current.forEach(clearTimeout), [])
 
-  const viewingAs = session.viewingAs
-  const partnerId = viewingAs ? OTHER[viewingAs] : null
-
-  useEffect(() => saveMessages(messages), [messages])
   useEffect(() => saveSettings(settings), [settings])
   useEffect(() => saveSession(session), [session])
 
   // Opening the thread as someone marks everything addressed to them as read.
   useEffect(() => {
     if (!viewingAs) return
-    setMessages((prev) => {
-      if (!prev.some((m) => m.from !== viewingAs && m.status !== 'read')) return prev
-      return prev.map((m) => (m.from !== viewingAs && m.status !== 'read' ? { ...m, status: 'read' } : m))
-    })
-  }, [viewingAs])
+    chat.markRead()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewingAs, messages.length])
 
   /* ---------------------------------------------------------------- */
 
   const handleLogin = (userId) => setSession({ userId, viewingAs: userId })
 
+  const closeReport = () => {
+    setScanOpen(false)
+    setSimplified(false)
+  }
+
   const handleSwitch = () => {
-    setTyping(false)
     setSession((s) => ({ ...s, viewingAs: OTHER[s.viewingAs] }))
     setReport(null)
-    setScanOpen(false)
+    setPlain(null)
+    closeReport()
   }
 
   const handleLogout = () => {
     setSession({ userId: null, viewingAs: null })
     setReport(null)
-    setScanOpen(false)
-  }
-
-  const handleSend = (text) => {
-    const message = {
-      id: uid('msg'),
-      from: viewingAs,
-      text,
-      ts: Date.now(),
-      status: 'sent',
-      attachment: null,
-    }
-    setMessages((prev) => [...prev, message])
-
-    later(
-      () =>
-        setMessages((prev) => prev.map((m) => (m.id === message.id ? { ...m, status: 'delivered' } : m))),
-      700,
-    )
-
-    if (!settings.simulateReplies) return
-
-    later(() => setTyping(true), 1100)
-    later(() => {
-      setTyping(false)
-      setMessages((prev) => [
-        ...prev.map((m) => (m.id === message.id ? { ...m, status: 'read' } : m)),
-        {
-          id: uid('msg'),
-          from: OTHER[viewingAs],
-          text: AUTO_REPLIES[Math.floor(Math.random() * AUTO_REPLIES.length)],
-          ts: Date.now(),
-          status: 'delivered',
-          attachment: null,
-        },
-      ])
-    }, 3400)
+    setPlain(null)
+    closeReport()
   }
 
   /* ---------------------------------------------------------------- */
 
   const runScan = useCallback(
-    async (tf = timeframe) => {
+    async (tf = timeframe, langOverride) => {
       if (!viewingAs) return
       const target = OTHER[viewingAs]
       setScanning(true)
       setLiveError(null)
       setScanOpen(true)
+      setSimplified(false)
+      setPlain(null)
 
       const started = Date.now()
-      const base = analyzeConversation({
-        messages,
-        targetId: target,
-        targetName: USERS[target].name,
-        timeframe: tf,
-      })
+      const languageSetting = langOverride ?? settings.reportLanguage
+      const language = resolveLanguage(
+        languageSetting,
+        messages.map((m) => m.text).filter(Boolean),
+      )
+
+      const base = {
+        ...analyzeConversation({
+          messages,
+          targetId: target,
+          targetName: USERS[target].name,
+          timeframe: tf,
+        }),
+        language,
+        languageSetting,
+      }
 
       let final = base
       if (settings.useLiveAI && (settings.apiKey || settings.provider === 'custom')) {
@@ -153,17 +137,21 @@ export default function App() {
             targetId: target,
             targetName: USERS[target].name,
             viewerName: USERS[viewingAs].name,
+            language,
             settings,
           })
           const seen = new Set(base.flags.map((f) => `${f.category}:${f.messageId}`))
           final = {
             ...base,
             engine: 'live model',
+            language: live.detectedLanguage && languageSetting === 'auto' ? live.detectedLanguage : language,
             summary: live.summary,
+            summaryLocal: live.summaryLocal,
             risk: live.risk == null ? base.risk : Math.round((live.risk + base.risk) / 2),
-            flags: [...base.flags, ...live.flags.filter((f) => !seen.has(`${f.category}:${f.messageId}`))].sort(
-              (a, b) => b.ts - a.ts,
-            ),
+            flags: [
+              ...base.flags,
+              ...live.flags.filter((f) => !seen.has(`${f.category}:${f.messageId}`)),
+            ].sort((a, b) => b.ts - a.ts),
             suggestions: [...live.suggestions, ...base.suggestions].slice(0, 5),
           }
         } catch (err) {
@@ -182,7 +170,7 @@ export default function App() {
               particleCount: 90,
               spread: 70,
               origin: { y: 0.35 },
-              colors: ['#00a884', '#06cf9c', '#53bdeb', '#e9edef'],
+              colors: ['#ff2e63', '#ff7597', '#ff5c86', '#fce9f1'],
               disableForReducedMotion: true,
             })
           }
@@ -198,8 +186,45 @@ export default function App() {
     runScan(tf)
   }
 
+  const handleLanguage = (lang) => {
+    setSettings((s) => ({ ...s, reportLanguage: lang }))
+    runScan(timeframe, lang)
+  }
+
+  /**
+   * Simplify always produces something: the local summary renders instantly,
+   * and a configured model then replaces it with a better-written version.
+   */
+  const handleSimplify = async () => {
+    if (!report) return
+    const targetName = USERS[OTHER[viewingAs]].name
+    setSimplified(true)
+    setPlain(buildPlainSummary({ report, language: report.language, targetName, messages }))
+
+    if (!settings.useLiveAI || !(settings.apiKey || settings.provider === 'custom')) return
+    setSimplifying(true)
+    try {
+      const better = await simplifyReport({
+        report,
+        targetName,
+        language: report.language,
+        settings,
+      })
+      setPlain({
+        bottomLine: better.bottomLine,
+        points: better.points.map((text, i) => ({ id: `p${i}`, text })),
+        nextStep: better.nextStep,
+        source: 'llm',
+      })
+    } catch (err) {
+      setLiveError(err?.message ? `${err.message}.` : 'Simplify request failed.')
+    } finally {
+      setSimplifying(false)
+    }
+  }
+
   const handleJump = (messageId) => {
-    setScanOpen(false)
+    closeReport()
     setMobilePane('chat')
     setFocusMessageId(messageId)
     later(() => setFocusMessageId(null), 2600)
@@ -207,13 +232,14 @@ export default function App() {
 
   const handleUseLine = (line) => {
     setInjectedDraft(line)
-    setScanOpen(false)
+    closeReport()
     setMobilePane('chat')
   }
 
   const handleResetDemo = () => {
-    setMessages(resetDemo())
+    chat.replaceLocal(resetDemo())
     setReport(null)
+    setPlain(null)
     setReportCount(0)
     setSettingsOpen(false)
   }
@@ -222,8 +248,9 @@ export default function App() {
     wipeEverything()
     setSettingsOpen(false)
     setReport(null)
+    setPlain(null)
     setReportCount(0)
-    setMessages(loadMessages())
+    chat.replaceLocal(resetDemo())
     setSession({ userId: null, viewingAs: null })
   }
 
@@ -239,16 +266,23 @@ export default function App() {
     return map
   }, [report])
 
-  if (!session.userId || !viewingAs) return <Login onLogin={handleLogin} />
+  if (!session.userId || !viewingAs) return <Login onLogin={handleLogin} settings={settings} />
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-wa-bg">
+    <div className="flex h-dvh flex-col overflow-hidden bg-tm-bg">
       <PerspectiveBar
         viewingAs={viewingAs}
         onSwitch={handleSwitch}
         onLogout={handleLogout}
         onSettings={() => setSettingsOpen(true)}
+        connection={chat.status}
       />
+
+      {chat.error && (
+        <p className="bg-rose-500/15 px-4 py-1.5 text-center text-[11.5px] text-rose-200">
+          Sync problem: {chat.error}
+        </p>
+      )}
 
       <div className="flex min-h-0 flex-1">
         <Sidebar
@@ -262,8 +296,12 @@ export default function App() {
             messages={messages}
             viewingAs={viewingAs}
             partnerId={partnerId}
-            typing={typing}
-            onSend={handleSend}
+            typing={chat.partnerTyping}
+            online={chat.mode === 'cloud' ? chat.partnerOnline : true}
+            live={chat.status === 'live'}
+            room={chat.room}
+            onTypingChange={chat.setTyping}
+            onSend={chat.send}
             onOpenScan={() => runScan(timeframe)}
             flaggedIds={flaggedIds}
             highlightsById={highlightsById}
@@ -284,7 +322,14 @@ export default function App() {
         targetName={USERS[partnerId].name}
         timeframe={timeframe}
         onTimeframe={handleTimeframe}
-        onClose={() => setScanOpen(false)}
+        language={settings.reportLanguage}
+        onLanguage={handleLanguage}
+        plain={plain}
+        simplified={simplified}
+        simplifying={simplifying}
+        onSimplify={handleSimplify}
+        onFullReport={() => setSimplified(false)}
+        onClose={closeReport}
         onRescan={() => runScan(timeframe)}
         onJump={handleJump}
         onUseLine={handleUseLine}

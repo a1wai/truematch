@@ -1,0 +1,14 @@
+{
+  "appId": "app.truematch.duo",
+  "appName": "True Match",
+  "webDir": "dist",
+  "backgroundColor": "#120810",
+  "android": {
+    "backgroundColor": "#120810",
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": true
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

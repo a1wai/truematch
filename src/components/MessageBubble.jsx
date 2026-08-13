@@ -1,14 +1,16 @@
 import { forwardRef } from 'react'
-import { Check, CheckCheck, Clock3, FileText, ImageIcon, Play } from 'lucide-react'
+import { Check, CheckCheck, CircleAlert, Clock3, FileText, ImageIcon, Play } from 'lucide-react'
 import { cn, timeLabel } from '../lib/utils.js'
 
 const WAVE = [6, 11, 17, 9, 14, 20, 13, 8, 16, 22, 12, 7, 15, 10, 18, 9, 13, 6]
 
 function Ticks({ status }) {
-  if (status === 'pending') return <Clock3 className="h-3.5 w-3.5 text-white/50" />
-  if (status === 'sent') return <Check className="h-3.5 w-3.5 text-white/55" />
-  if (status === 'read') return <CheckCheck className="h-3.5 w-3.5 text-wa-blue" />
-  return <CheckCheck className="h-3.5 w-3.5 text-white/55" />
+  // Outgoing bubbles are soft rose, so every tick state is a shade of ink.
+  if (status === 'failed') return <CircleAlert className="h-3.5 w-3.5 text-red-900" />
+  if (status === 'pending') return <Clock3 className="h-3.5 w-3.5 text-tm-ink/45" />
+  if (status === 'sent') return <Check className="h-3.5 w-3.5 text-tm-ink/45" />
+  if (status === 'read') return <CheckCheck className="h-3.5 w-3.5 text-tm-tick" />
+  return <CheckCheck className="h-3.5 w-3.5 text-tm-ink/45" />
 }
 
 function Attachment({ attachment, outgoing }) {
@@ -40,28 +42,33 @@ function Attachment({ attachment, outgoing }) {
           type="button"
           className={cn(
             'grid h-9 w-9 shrink-0 place-items-center rounded-full transition',
-            outgoing ? 'bg-white/15 hover:bg-white/25' : 'bg-wa-teal/20 hover:bg-wa-teal/30',
+            outgoing ? 'bg-tm-ink/15 hover:bg-tm-ink/25' : 'bg-tm-rose/20 hover:bg-tm-rose/30',
           )}
           aria-label="Play voice message"
         >
-          <Play className="h-4 w-4 translate-x-px fill-current text-wa-teal-bright" />
+          <Play className="h-4 w-4 translate-x-px fill-current text-tm-rose-bright" />
         </button>
         <div className="flex flex-1 items-center gap-[3px]">
           {WAVE.map((h, i) => (
             <span
               key={i}
               style={{ height: `${h}px` }}
-              className={cn('w-[3px] rounded-full', i < 6 ? 'bg-wa-teal-bright/80' : 'bg-white/25')}
+              className={cn(
+                'w-[3px] rounded-full',
+                i < 6 ? 'bg-tm-rose' : outgoing ? 'bg-tm-ink/25' : 'bg-white/25',
+              )}
             />
           ))}
         </div>
-        <span className="shrink-0 text-[11px] text-white/60">{attachment.length}</span>
+        <span className={cn('shrink-0 text-[11px]', outgoing ? 'text-tm-ink/60' : 'text-white/60')}>
+          {attachment.length}
+        </span>
       </div>
     )
   }
 
   return (
-    <div className="mb-1.5 flex w-60 max-w-full items-center gap-3 rounded-lg bg-black/20 p-2.5">
+    <div className="mb-1.5 flex w-60 max-w-full items-center gap-3 rounded-lg bg-black/25 p-2.5">
       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-rose-500/20 text-rose-300">
         <FileText className="h-5 w-5" />
       </span>
@@ -88,7 +95,7 @@ function HighlightedText({ text, highlights }) {
   const set = new Set(highlights.map((h) => h.toLowerCase()))
   return parts.map((part, i) =>
     set.has(part.toLowerCase()) ? (
-      <mark key={i} className="rounded bg-amber-400/25 px-0.5 text-amber-100 decoration-amber-300/60 underline-offset-2">
+      <mark key={i} className="rounded bg-tm-rose/35 px-0.5 font-medium text-tm-text">
         {part}
       </mark>
     ) : (
@@ -110,7 +117,7 @@ const MessageBubble = forwardRef(function MessageBubble(
       <div
         className={cn(
           'relative max-w-[85%] rounded-lg px-2.5 py-1.5 text-[14.5px] leading-relaxed shadow-sm sm:max-w-[65%]',
-          outgoing ? 'bg-wa-teal-deep text-wa-text' : 'bg-wa-panel-2 text-wa-text',
+          outgoing ? 'bg-tm-bubble-out text-tm-ink' : 'bg-tm-panel-2 text-tm-text',
           showTail && (outgoing ? 'bubble-out rounded-tr-none' : 'bubble-in rounded-tl-none'),
           revealFlags && flagged && 'ring-1 ring-rose-400/60',
           pulsing && 'ring-2 ring-amber-300/80',
@@ -140,7 +147,12 @@ const MessageBubble = forwardRef(function MessageBubble(
           <span className="block h-4" />
         )}
 
-        <span className="absolute bottom-1 right-2 flex items-center gap-1 text-[10.5px] text-white/50">
+        <span
+          className={cn(
+            'absolute bottom-1 right-2 flex items-center gap-1 text-[10.5px]',
+            outgoing ? 'text-tm-ink/55' : 'text-tm-muted',
+          )}
+        >
           {timeLabel(message.ts)}
           {outgoing && <Ticks status={message.status} />}
         </span>

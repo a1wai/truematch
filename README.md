@@ -1,86 +1,167 @@
 # True Match
 
-A two-person, WhatsApp-style messenger with a hidden **Lie & Deception Detector**. The chat is
-ordinary; the interesting part is the scanner behind the 🕵️‍♂️ button, which reads the thread and
-reports where the other person's language stops being consistent.
+[![Build Android APK](https://github.com/a1wai/truematch/actions/workflows/build-apk.yml/badge.svg)](https://github.com/a1wai/truematch/actions/workflows/build-apk.yml)
+[![Download APK](https://img.shields.io/badge/Download-Android%20APK-FF2E63?style=for-the-badge&logo=android&logoColor=white)](https://github.com/a1wai/truematch/releases/latest/download/truematch.apk)
 
-Built with **Vite + React + Tailwind CSS v4 + Lucide + Framer Motion**. No backend, no accounts —
-everything lives in `localStorage`.
+**[⬇️ Download the latest Android APK](https://github.com/a1wai/truematch/releases/latest/download/truematch.apk)**
+
+A private messenger for two people, with a lie & deception detector running
+quietly underneath. The chat is ordinary. The interesting part is the 🕵️‍♂️ button,
+which reads the thread — in English *or* romanised Urdu, Hindi, Indonesian,
+Turkish or Romanian — and reports where the other person's story stops holding
+together.
+
+Web + Android, built with **Vite · React · Tailwind v4 · Supabase Realtime ·
+Capacitor · Framer Motion · Lucide**.
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
-npm run build    # -> dist/
-npm run preview
+npm run dev          # http://localhost:5173
+npm run build        # -> dist/
+npm run android:apk  # -> android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## What is in the prototype
+---
 
-**Authentication & perspective switching.** A login screen with pre-populated *Login as User 1* /
-*Login as User 2* buttons, and a persistent top bar reading *Currently viewing as: …* with a switch
-control. Both sides of the conversation live on one device, so you can play Alex, answer as Jordan,
-and scan in either direction. The scan always analyses whoever you are **not** logged in as.
+## The two accounts
 
-**The chat.** WhatsApp dark-emerald styling (`#00a884` on `#0b141a`), day separators, delivery and
-read receipts (✓ / ✓✓ / blue ✓✓), typing indicators, image, voice-note and document attachment
-previews, and a responsive two-pane layout that collapses to a single pane on mobile.
+The app opens on the login screen with **Usama** and **Bisma** ready to tap — no
+password, no sign-up. Open one account on each phone and the two of you are
+talking. The scan always analyses whoever you are *not* logged in as.
 
-**Deception Intelligence Report.** Triggered by the glowing scan button in the chat header:
+Photos go in `public/avatars/usama.jpg` and `public/avatars/bisma.jpg`
+(see the README in that folder). Until they exist, coloured monograms stand in.
 
-- **Dishonesty risk meter** — animated SVG ring that counts up and colours by band.
-- **Timeframe selector** — Last 24 Hours / Last 7 Days / All Chat History, re-running the scan.
-- **Linguistic anomaly breakdown** — four detector families, each with a signal-strength bar,
-  clickable to filter the feed below.
-- **Flagged messages feed** — every finding quotes the exact message, highlights the substring that
-  triggered it, explains *why* in plain English, and links back to the older message it contradicts.
-- **Tactical counter-strategy** — copilot suggestions with the exact line to send, the reasoning
-  behind it, and a *Load into composer* button.
+## Real-time messaging
 
-Reports export as JSON and are kept (12 most recent) in `localStorage`.
+Out of the box the app runs **local-only**: messages stay in `localStorage` on
+one device, and the other side auto-replies so a solo demo still produces a
+conversation.
 
-## How the detector works
+To make two real devices talk to each other:
 
-`src/lib/analysis.js` is a deterministic, fully offline engine — no model required. Every flag
-carries the substring that produced it, so nothing is a black box.
+1. Create a free project at [supabase.com](https://supabase.com).
+2. Open **SQL Editor** and run [`supabase/schema.sql`](supabase/schema.sql).
+3. In the app: **Settings → Realtime sync**, paste the **Project URL** and the
+   **anon public** key, and give both devices the same **room code**.
+4. Hit **Test sync**. The chat header switches from `Local` to `Live`.
+
+Alternatively set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` at build time
+(see `.env.example`). The in-app settings still win, which is what lets an
+already-installed APK be pointed at a project after the fact.
+
+What you get once it is live: messages appear on the other device instantly
+(Postgres change subscription), plus real typing indicators, presence-based
+online/last-seen, and read receipts that sync both ways.
+
+> **Be honest with yourself about the security model.** The demo policies in
+> `schema.sql` let anyone holding the anon key read and write any room — that is
+> the price of zero-friction test accounts, and the anon key ships inside the
+> APK. It is fine for you and your partner testing on two phones. It is not
+> private against a determined stranger. The file documents how to lock it down
+> with Supabase Auth when you want that.
+
+## Romanised language support
+
+Most couples do not text in clean English or clean Urdu. They text like this:
+
+> *"main office mein tha, 11 baje tak, waise bhi tumhe ghalat yaad hai"*
+
+Both engines understand that.
+
+**On-device (no key needed).** The rule engine in `src/lib/analysis.js` carries
+pattern banks for English and Roman Urdu/Hindi across all four detector
+families, plus deflection phrases for Indonesian, Turkish and Romanian. It reads
+`11 baje tak` as a time claim, treats `ghar pe nahi thi` as a *negated* claim
+rather than a location, and knows that `koi baat nahi` is "no problem" while
+`office ka koi tha` is an anonymised person.
+
+**With a model (Groq / OpenRouter / any OpenAI-compatible endpoint).** The system
+prompt normalises first and judges second: every message is translated to
+English internally *before* any deception analysis runs, and the prompt states
+outright that spelling, typos and script choice are never evidence — so
+`nahi`/`nahin`/`nai` drift can't be mistaken for evasion. Findings come back
+with the original quote, an English translation, and the explanation in both
+English and the reader's own language.
+
+Pick the report language in the report header or in Settings. `Auto-detect`
+fingerprints the conversation by stop-word frequency; anything else forces that
+language.
+
+## The report
+
+- **Risk meter** — animated ring, 0–100, coloured by band.
+- **Timeframe** — Last 24 Hours / Last 7 Days / All Chat History.
+- **Four detector families**, each with a signal-strength bar that filters the
+  feed below it.
+- **Flagged messages** — every finding quotes the exact message, highlights the
+  substring that triggered it, explains why in plain language, and links back to
+  the older message it contradicts.
+- **Counter-strategy** — suggested questions, written in the language the couple
+  actually texts in, with a *Load into composer* button.
+- **Simplify this report** — one verdict line, three findings, one next step, in
+  the selected language. Works offline; a configured model rewrites it better.
+
+Reports export as JSON and the last 12 are kept on the device.
+
+### How the detector works
+
+Deterministic and explainable — every flag carries the substring that produced
+it. No black box.
 
 | Detector | What it looks for |
 | --- | --- |
-| 🚩 Over-explaining | Word count, density of justification markers (*because*, *the reason*, *anyway*, *honestly*), unprompted specifics, and long answers to short questions. |
-| 🚩 Distancing language | A named referent ("my friend Sam") later reduced to "that person" / "someone from work", or a referent relabelled between messages. |
-| 🚩 Timeline contradictions | Location and departure-time claims are extracted per message, grouped by the **day they describe** (weekday names resolve to real dates), and compared. Only genuinely exclusive pairs conflict — "office" then "home" is a sequence, not a lie. Negations ("*not* the gym") are excluded. |
-| 🚩 Deflection & manipulation | Gaslighting and thread-termination phrasing ("you're overthinking", "you're remembering it wrong", "can we drop this"), plus reply latency after a direct question. |
+| 🚩 Over-explaining | Word count, density of justification markers (*because*, *kyunki*, *is liye*, *waise bhi*, *karena*, *çünkü*), unprompted specifics, long answers to short questions. |
+| 🚩 Distancing | A named referent (*"mera dost Kamran"*) later reduced to *"office ka koi"* / *"that person"*, or a referent relabelled between messages. |
+| 🚩 Timeline | Location and departure-time claims extracted per message, grouped by **the day they describe** (weekday names resolve to real dates), then compared. Only genuinely exclusive pairs conflict — office→home is a sequence, not a lie. Negation is handled on both sides of the phrase, since Urdu and Turkish put it *after* (`ghar pe nahi thi`). |
+| 🚩 Deflection | Gaslighting and thread-shutdown phrasing (*"you're overthinking"*, *"tum bohat zyada soch rahi ho"*, *"tumhe ghalat yaad hai"*, *"chhoro is baat ko"*), plus reply latency after a direct question. |
 
-Each flag is weighted by severity and mapped through `1 - e^(-total/k)` to a 0–100 risk score, so
-signals accumulate with diminishing returns rather than saturating at the first hit. Contradictions
-are computed over the whole history and then filtered so the *newer* statement falls inside the
-selected timeframe — that is what makes "Last 24 Hours" surface a fresh claim that conflicts with a
-week-old one.
+Signals are severity-weighted and mapped through `1 - e^(-total/k)`, so evidence
+accumulates with diminishing returns instead of pinning at 95% on the first hit.
+Contradictions are computed across all history and then filtered so the *newer*
+statement falls inside the selected window — that is what lets "Last 24 Hours"
+surface a fresh claim that conflicts with a week-old one.
 
-The seeded conversation contains planted cues on **both** sides, so switching perspective produces a
-genuinely different report (~86% one way, ~33% the other).
+The seeded conversation carries planted cues on **both** sides, so the report is
+worth reading whichever account you log in as (~85% one way, ~47% the other).
 
-## Optional: live open-source models
+## Android APK
 
-The gear icon opens client-side AI settings. Pick **Groq**, **OpenRouter**, or any OpenAI-compatible
-**custom endpoint** (Ollama, vLLM, LM Studio), paste a free key, and choose a model —
-`llama-3.3-70b-versatile`, `qwen/qwen-2.5-72b-instruct`, `deepseek-r1` and friends. With *Use live
-model for scans* enabled, the transcript is sent to that provider and its findings are merged with
-the local ones; if the request fails, the report falls back to the on-device analysis and says so.
+`.github/workflows/build-apk.yml` builds an APK on **every push to any branch**:
 
-Keys are stored in `localStorage` and sent straight from the browser to the provider — fine for a
-prototype on your own machine, not for a shared computer or a production key.
+- Every push → downloadable artifact under the run's **Artifacts** section.
+- Push to `main` → also refreshes the `latest` release, which is what the
+  download button at the top of this file points at.
+
+Locally, `npm run android:apk` does the same thing if you have the Android SDK
+and JDK 21 installed. The native project is committed, so `android/` can be
+opened directly in Android Studio.
+
+The APK is a **debug build** signed with the standard Android debug key: fine
+for installing on your own phones, not acceptable to the Play Store. For a
+release build you would add a keystore, sign in the workflow, and switch to
+`assembleRelease`.
 
 ## Deployment
 
-`vite.config.js` sets `base: './'`, so `dist/` works unchanged from a subpath or a domain root.
+`vite.config.js` sets `base: './'`, so one `dist/` works from a domain root, a
+repo subpath, and the Capacitor `file://` shell.
 
-- **GitHub Pages** — `.github/workflows/deploy.yml` builds and publishes on every push to `main`
-  (enable Pages → Source: GitHub Actions).
 - **Vercel** — `vercel.json` is included; import the repo and accept the defaults.
+- **GitHub Pages** — `.github/workflows/deploy.yml` publishes on every push to
+  `main`. Needs **Settings → Pages → Source: GitHub Actions** enabled once.
 
-## A note on what this is
+## Honest limits
 
-Linguistic deception cues are weak, contested signals. Stress, culture, neurodivergence and typing
-habits all produce the same patterns this engine flags. The report says so in its own footer, and
-the counter-strategy section suggests questions rather than conclusions. Treat the output as a
-prompt for a conversation — never as evidence about a person.
+- **Linguistic deception cues are weak signals.** Stress, culture,
+  neurodivergence and typing habits all produce the same patterns this engine
+  flags. The report says so in its own footer. Treat it as a prompt for a
+  conversation, never as evidence about a person.
+- **Report *content* is localised; the surrounding UI chrome is still English.**
+  Category names, verdicts, gists and the simplified summary translate. Labels
+  like "SCAN TIMEFRAME" do not.
+- **Offline localisation is deliberately short.** Long-form per-flag reasoning in
+  a non-English language comes from the model; without a key the detail stays in
+  English rather than shipping shaky machine translation.
+- **Roman Urdu and Roman Hindi are nearly identical once romanised.** Auto-detect
+  guesses; override it in Settings if it picks wrong.

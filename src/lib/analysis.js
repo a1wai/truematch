@@ -59,6 +59,7 @@ const SEVERITY_WEIGHT = { high: 3.2, medium: 1.8, low: 0.9 }
 /* ------------------------------------------------------------------ */
 
 const JUSTIFIERS = [
+  // English
   /\bbecause\b/gi,
   /\bthe reason\b/gi,
   /\banyway\b/gi,
@@ -73,13 +74,38 @@ const JUSTIFIERS = [
   /\bevery single\b/gi,
   /\bso i (had|have|put|took|went)\b/gi,
   /\bthen i\b/gi,
+  // Roman Urdu / Hindi — the same padding, different alphabet
+  /\bkyun\s?ke\b/gi,
+  /\bkyunki\b/gi,
+  /\bkyuki\b/gi,
+  /\bis\s?i?\s?liye\b/gi,
+  /\bwaise bhi\b/gi,
+  /\bkhair\b/gi,
+  /\bmatlab\b/gi,
+  /\bsach mein\b/gi,
+  /\byaqeen\b/gi,
+  /\bbas itn[ai]\b/gi,
+  /\bphir (main|maine|mein)\b/gi,
+  /\buske baad\b/gi,
+  /\bdar\s?asal\b/gi,
+  // Indonesian / Turkish / Romanian connectives
+  /\bkarena\b/gi,
+  /\bsoalnya\b/gi,
+  /\bpokoknya\b/gi,
+  /\bcunku\b/gi,
+  /\bçünkü\b/gi,
+  /\byani\b/gi,
+  /\bpentru ca\b/gi,
+  /\bde fapt\b/gi,
 ]
 
 const SPECIFICS = [
   /\b\d{1,2}[:.]\d{2}\b/g,
   /\b\d{1,2}\s?(am|pm)\b/gi,
-  /\b(exactly|precisely)\b/gi,
+  /\b\d{1,2}(:\d{2})?\s*baje\b/gi,
+  /\b(exactly|precisely|sirf|bilkul|theek)\b/gi,
   /\b(one|two|three|four|five|six|seven|eight|nine|ten)\b/gi,
+  /\b(ek|do|teen|char|paanch|das|teesri|doosri)\b/gi,
   /\b\d+\b/g,
 ]
 
@@ -160,6 +186,7 @@ function detectOverExplaining(msgs, ctx) {
 /* ------------------------------------------------------------------ */
 
 const GENERIC_REFERENTS = [
+  // English
   { re: /\bthat person\b/i, label: 'that person' },
   { re: /\bthe person\b/i, label: 'the person' },
   { re: /\ba person\b/i, label: 'a person' },
@@ -171,11 +198,32 @@ const GENERIC_REFERENTS = [
   { re: /\bwhoever\b/i, label: 'whoever' },
   { re: /\bnot important who\b/i, label: 'not important who' },
   { re: /\bthe guy beside me\b/i, label: 'the guy beside me' },
+  // Roman Urdu / Hindi. Bare "koi" is excluded on purpose — "koi baat nahi"
+  // means "no problem" and would flag half the thread.
+  { re: /\boffice (ka|ke|ki) kis[iy]\b/i, label: 'office ka koi' },
+  { re: /\boffice (ka|ki) koi\b/i, label: 'office ka koi' },
+  { re: /\bkis[iy] band[ae]\b/i, label: 'kisi banday' },
+  { re: /\bek band[ae]\b/i, label: 'ek banda' },
+  { re: /\bwo(h)? band[ae]\b/i, label: 'wo banda' },
+  { re: /\bkoi (tha|thi)\b/i, label: 'koi tha' },
+  { re: /\bkis[iy] ne\b/i, label: 'kisi ne' },
+  { re: /\boffice ka colleague\b/i, label: 'office ka colleague' },
+  { re: /\bek dost\b/i, label: 'ek dost' },
+  { re: /\bimportant nahi ke kaun\b/i, label: 'kaun tha ye important nahi' },
+  { re: /\bfarq (nahi )?parta hai kaun\b/i, label: 'kaun tha farq nahi parta' },
+  // Indonesian / Turkish / Romanian
+  { re: /\bteman kantor\b/i, label: 'teman kantor' },
+  { re: /\bseseorang\b/i, label: 'seseorang' },
+  { re: /\bbiri(si)?\b/i, label: 'birisi' },
+  { re: /\bcineva\b/i, label: 'cineva' },
 ]
 
-/** "my friend Sam" — a name introduced with a relationship is the strongest anchor. */
+/**
+ * A name introduced with a relationship is the strongest anchor — "my friend
+ * Sam", "mera dost Kamran", "meri cousin Ayesha".
+ */
 const QUALIFIED_NAME =
-  /\b(?:my |our )?(?:friend|buddy|mate|coworker|co-worker|colleague|sister|brother|neighbour|neighbor|boss)\s+([A-Z][a-z]+)\b/
+  /\b(?:[Mm]y |[Oo]ur )?(?:friend|buddy|mate|coworker|co-worker|colleague|sister|brother|neighbour|neighbor|boss)\s+([A-Z][a-z]+)\b|\b[MmAa](?:era|eri|ere|pna|pni)\s+(?:dost|cousin|bhai|behen|behan|friend|colleague)\s+([A-Z][a-z]+)\b/
 /** A bare first name mentioned mid-sentence, e.g. "…and Sam said…". */
 const BARE_NAME = /([A-Z][a-z]{2,})\b(?=\s+(?:from|said|says|and|was|is|needs|wanted))/
 const NOT_NAMES = new Set([
@@ -201,7 +249,7 @@ function detectDistancing(msgs) {
     if (!m.text) continue
     const qualified = m.text.match(QUALIFIED_NAME)
     const bare = qualified ? null : findBareName(m.text)
-    if (qualified) history.push({ msg: m, name: qualified[1], qualified: true })
+    if (qualified) history.push({ msg: m, name: qualified[1] || qualified[2], qualified: true })
     else if (bare) history.push({ msg: m, name: bare[1], qualified: false })
 
     const hit = GENERIC_REFERENTS.find((g) => g.re.test(m.text))
@@ -267,21 +315,34 @@ const LOCATION_RULES = [
   {
     value: 'the office',
     label: 'at the office / working late',
-    re: /\b(?:at|in) the office\b|\bat my desk\b|\bat work\b|\bstayed late\b|\bstuck at (?:the )?office\b/i,
+    labelLocal: 'office mein / late tak kaam',
+    re: /\b(?:at|in) the office\b|\bat my desk\b|\bat work\b|\bstayed late\b|\bstuck at (?:the )?office\b|\boffice (?:mein|me|se|par)\b|\blate tak ruk[aiy]\b|\bkaam par\b|\bofiste\b|\bdi kantor\b|\bla birou\b/i,
   },
   {
     value: 'helping someone move',
-    label: 'helping someone move furniture',
-    re: /\bhelp(?:ing|ed)?\b[^.?!]{0,45}\b(?:move|moving|couch|sofa|desk|furniture|carry)\b/i,
+    label: 'helping someone move / shifting',
+    labelLocal: 'kisi ki shifting mein madad',
+    re: /\bhelp(?:ing|ed)?\b[^.?!]{0,45}\b(?:move|moving|couch|sofa|desk|furniture|carry)\b|\bsaman\b[^.?!]{0,30}\b(?:shift|pahuncha|utha|le gaya)\b|\bshift ho raha\b|\bmadad kar raha\b|\bshifting\b/i,
   },
   {
-    value: 'a bar',
-    label: "at Kelso's / at a bar",
-    re: /\bkelso'?s\b|\bat the bar\b|\bstopped in\b|\b(?:one|a|second|another) drink\b/i,
+    value: 'a cafe or bar',
+    label: 'at the cafe / bar',
+    labelLocal: 'cafe ya bahar',
+    re: /\bkelso'?s\b|\bat the bar\b|\bstopped in\b|\b(?:one|a|second|another) drink\b|\bcafe\b|\bchai peene\b|\bcoffee (?:peene|pi)\b|\bbahar (?:tha|thi)\b/i,
   },
-  { value: 'home', label: 'at home', re: /\b(?:straight|went|came|got|back) home\b|\bat home\b/i },
-  { value: 'the gym', label: 'at the gym', re: /\bthe gym\b/i },
-  { value: "a relative's place", label: "at my sister's", re: /\bmy sister'?s\b/i },
+  {
+    value: 'home',
+    label: 'at home',
+    labelLocal: 'ghar par',
+    re: /\b(?:straight|went|came|got|back) home\b|\bat home\b|\bseedha ghar\b|\bghar (?:aa gaya|aa gayi|pe hi|pe tha|pe thi|par tha|par thi|mein tha|mein thi)\b|\bevde\b|\bdi rumah\b|\bacasa\b/i,
+  },
+  { value: 'the gym', label: 'at the gym', labelLocal: 'gym mein', re: /\bgym\b/i },
+  {
+    value: "a relative's place",
+    label: "at a relative's place",
+    labelLocal: 'rishtedaar ke ghar',
+    re: /\bmy sister'?s\b|\b[A-Z][a-z]+ ke ghar\b|\b(?:cousin|behen|behan|bhai|khala|phupo) ke ghar\b/i,
+  },
 ]
 
 /**
@@ -291,24 +352,36 @@ const LOCATION_RULES = [
 const CONFLICTS = new Set(
   [
     ['the office', 'helping someone move'],
-    ['the office', 'a bar'],
-    ['home', 'a bar'],
+    ['the office', 'a cafe or bar'],
+    ['home', 'a cafe or bar'],
     ['home', 'helping someone move'],
     ['the gym', "a relative's place"],
     ['the office', 'the gym'],
     ['the office', "a relative's place"],
+    ['home', "a relative's place"],
+    ['the gym', 'a cafe or bar'],
   ].map((p) => p.slice().sort().join('|')),
 )
 
 const END_TIME =
   /\b(?:till|til|until|leaving|left|out of there|home by|back by|finished)\b[^.?!]{0,24}?\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i
 
+/** "11 baje tak", "9:30 baje nikla" — the Roman Urdu/Hindi way of pinning a time. */
+const END_TIME_ROMAN =
+  /\b(\d{1,2})(?::(\d{2}))?\s*baje\b(?:\s*(?:tak|se))?(?=[^.?!]{0,40}\b(?:tak|nikl|rahunga|rahungi|ruk|aa gaya|aa gayi|gaya|gayi|band)\w*)/i
+
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 
-/** Negation directly before a match ("not the gym") should not create a claim. */
-function isNegated(text, index) {
-  const window = text.slice(Math.max(0, index - 22), index).toLowerCase()
-  return /\b(not|never|wasn'?t|weren'?t|didn'?t|isn'?t|no)\b[\s,—-]*$|\bnot\b/.test(window)
+/**
+ * Negation should cancel a claim. English puts it before the phrase ("not the
+ * gym"); Urdu, Hindi and Turkish put it after ("ghar pe nahi thi", "evde
+ * degildim"), so both sides of the match are checked.
+ */
+function isNegated(text, index, length = 0) {
+  const before = text.slice(Math.max(0, index - 22), index).toLowerCase()
+  if (/\b(not|never|wasn'?t|weren'?t|didn'?t|isn'?t|no)\b[\s,—-]*$|\bnot\b/.test(before)) return true
+  const after = text.slice(index + length, index + length + 14).toLowerCase()
+  return /^[^.?!,]{0,10}\b(nahi|nahin|nai|na|degil|değil|bukan|nu)\b/.test(after)
 }
 
 /** Which calendar day is this message talking about? */
@@ -334,12 +407,20 @@ function extractClaims(msg) {
 
   for (const rule of LOCATION_RULES) {
     const m = msg.text.match(rule.re)
-    if (!m || isNegated(msg.text, m.index)) continue
-    claims.push({ key: 'location', value: rule.value, label: rule.label, when, msg, quote: m[0] })
+    if (!m || isNegated(msg.text, m.index, m[0].length)) continue
+    claims.push({
+      key: 'location',
+      value: rule.value,
+      label: rule.label,
+      labelLocal: rule.labelLocal,
+      when,
+      msg,
+      quote: m[0],
+    })
   }
 
-  const t = msg.text.match(END_TIME)
-  if (t && !isNegated(msg.text, t.index)) {
+  const t = msg.text.match(END_TIME) || msg.text.match(END_TIME_ROMAN)
+  if (t && !isNegated(msg.text, t.index, t[0].length)) {
     let h = Number(t[1])
     const mins = Number(t[2] || 0)
     const mer = (t[3] || '').toLowerCase()
@@ -483,6 +564,79 @@ const DEFLECTIONS = [
     re: /\bi already (told|explained) you\b|\btwice\b/i,
     severity: 'low',
     reason: 'Appeals to a previous answer instead of repeating it — the previous answer is what is in dispute.',
+  },
+
+  /* ---- Roman Urdu / Hindi ---- */
+  {
+    re: /\b(?:tum|aap)\b[^.?!]{0,18}\b(?:bohat|bahut|zyada|zada)\b[^.?!]{0,14}\bsoch\w*\b/i,
+    severity: 'high',
+    reason:
+      'Reframes a request for facts as overthinking on your part ("tum bohat zyada soch rahi ho"). The claim itself never gets answered — your judgement gets questioned instead.',
+  },
+  {
+    re: /\b(?:tum|aap) hamesha\b/i,
+    severity: 'medium',
+    reason:
+      'Absolute generalisation ("tum hamesha aisa karti ho"). Moves the subject from one specific evening to your character in general.',
+  },
+  {
+    re: /\bbaat ghuma\w*\b|\bmeri baat ka matlab badal\w*\b/i,
+    severity: 'high',
+    reason:
+      'Accuses you of twisting the words ("baat ghuma rahi ho") instead of simply repeating what was actually said.',
+  },
+  {
+    re: /\b(?:maine|main ne) kabhi nahi kaha\b|\btumhe ghalat yaad hai\b|\bmaine (?:aisa|ye) kaha hi nahi\b/i,
+    severity: 'high',
+    reason:
+      'Attacks your memory of a message still sitting in the thread ("tumhe ghalat yaad hai"). Textbook gaslighting: rewrite the record rather than the behaviour.',
+  },
+  {
+    re: /\bbharosa nahi\b|\byaqeen nahi\b|\bitne saalon baad\b|\bmain ne kya kiya hai tumhare liye\b/i,
+    severity: 'high',
+    reason:
+      'Turns a factual question into a loyalty test ("tumhe mujh par bharosa nahi?"), so asking again starts to feel like an accusation.',
+  },
+  {
+    re: /\bchh?o[rd]o\b|\bbaad mein baat\b|\babhi (?:main )?ye nahi karna chahta\b|\bis baat ko yahin khatam\b/i,
+    severity: 'medium',
+    reason:
+      'Shuts the thread down at the exact moment specifics are requested ("chhoro is baat ko").',
+  },
+  {
+    re: /\bkya farq parta hai\b|\bfarq nahi parta\b|\bimportant nahi\b/i,
+    severity: 'medium',
+    reason:
+      'Challenges your right to ask rather than answering ("kya farq parta hai?"). Note the answer itself would be one word.',
+  },
+  {
+    re: /\bpehle bhi bata\w* (?:hoon|hun|chuka|chuki)\b|\bdo dafa\b|\bbata to diya tha\b/i,
+    severity: 'low',
+    reason:
+      'Points back at an earlier answer instead of giving it again ("pehle bhi bata chuka hoon") — but that earlier answer is exactly what is in dispute.',
+  },
+  {
+    re: /\bpagal ho\b|\bdimagh kharab\b|\bwehmi ho\b|\bshak(?:i| karna) chhoro\b/i,
+    severity: 'high',
+    reason:
+      'Pathologises your reaction ("pagal ho gayi ho", "wehmi ho") so raising it again looks unreasonable.',
+  },
+
+  /* ---- Indonesian / Turkish / Romanian ---- */
+  {
+    re: /\bkamu (?:terlalu )?(?:mikir|berpikir) (?:terlalu )?(?:banyak|berlebihan)\b|\bjangan berlebihan\b/i,
+    severity: 'high',
+    reason: 'Reframes the question as you overthinking rather than answering it.',
+  },
+  {
+    re: /\bcok (?:fazla )?dusun\w*\b|\bçok (?:fazla )?düşün\w*\b|\bsen hep\b/i,
+    severity: 'high',
+    reason: 'Reframes the question as you overthinking, or generalises to "you always".',
+  },
+  {
+    re: /\bgandesti prea mult\b|\bgândești prea mult\b|\bmereu faci asta\b/i,
+    severity: 'high',
+    reason: 'Reframes the question as you overthinking, or generalises to "you always do this".',
   },
 ]
 

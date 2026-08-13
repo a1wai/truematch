@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Referenced by styles.xml, which ships without these definitions in the
+  Capacitor template — resource linking fails without this file.
+  Values mirror the web palette so the native chrome matches the app.
+-->
+<resources>
+    <color name="colorPrimary">#120810</color>
+    <color name="colorPrimaryDark">#0C0509</color>
+    <color name="colorAccent">#FF2E63</color>
+</resources>

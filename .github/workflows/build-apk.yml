@@ -1,0 +1,81 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web bundle
+        run: npm run build
+
+      - name: Sync web bundle into the Android project
+        run: npx cap sync android
+
+      - name: Assemble debug APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Name the artifact
+        id: name
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/debug/app-debug.apk out/truematch.apk
+          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      # Every push gets a downloadable artifact, on any branch.
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: truematch-apk-${{ steps.name.outputs.sha }}
+          path: out/truematch.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      # Pushes to the default branch also refresh the "latest" release, which is
+      # what the download button in the README points at.
+      - name: Publish to the latest release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: True Match — latest build
+          body: |
+            Debug APK built automatically from `main` (${{ steps.name.outputs.sha }}).
+
+            Install on Android: download `truematch.apk`, then allow
+            "Install unknown apps" for your browser when prompted. This is a
+            debug build signed with the standard Android debug key — fine for
+            testing, not for the Play Store.
+          files: out/truematch.apk
+          prerelease: false
+          make_latest: true

@@ -1,26 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import {
-  ArrowDown,
-  ChevronLeft,
-  Mic,
-  MoreVertical,
-  Paperclip,
-  Phone,
-  Search,
-  Send,
-  Smile,
-  Video,
-} from 'lucide-react'
+import { ArrowDown, ChevronLeft, Cloud, CloudOff, Mic, Paperclip, Search, Send, Smile } from 'lucide-react'
 import { USERS } from '../data/seed.js'
-import { cn, dayLabel, startOfDay } from '../lib/utils.js'
+import { cn, dayLabel, relativeTime, startOfDay } from '../lib/utils.js'
 import Avatar from './Avatar.jsx'
 import MessageBubble from './MessageBubble.jsx'
 
 function DaySeparator({ ts }) {
   return (
     <div className="my-3 flex justify-center">
-      <span className="rounded-lg bg-wa-panel-2/90 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-wa-muted shadow-sm">
+      <span className="rounded-lg bg-tm-panel-2/90 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-tm-muted shadow-sm">
         {dayLabel(ts)}
       </span>
     </div>
@@ -35,16 +24,16 @@ function TypingIndicator({ user }) {
       exit={{ opacity: 0, y: 6 }}
       className="flex items-end gap-2 px-3 pb-1 sm:px-6"
     >
-      <div className="flex items-center gap-1 rounded-lg rounded-tl-none bg-wa-panel-2 px-3.5 py-3">
+      <div className="flex items-center gap-1 rounded-lg rounded-tl-none bg-tm-panel-2 px-3.5 py-3">
         {[0, 1, 2].map((i) => (
           <span
             key={i}
-            className="h-1.5 w-1.5 rounded-full bg-wa-muted"
+            className="h-1.5 w-1.5 rounded-full bg-tm-muted"
             style={{ animation: 'bob 1.2s ease-in-out infinite', animationDelay: `${i * 0.16}s` }}
           />
         ))}
       </div>
-      <span className="pb-1 text-[11px] text-wa-muted">{user.name.split(' ')[0]} is typing…</span>
+      <span className="pb-1 text-[11px] text-tm-muted">{user.name.split(' ')[0]} is typing…</span>
     </motion.div>
   )
 }
@@ -63,13 +52,24 @@ export default function ChatWindow({
   injectedDraft,
   onDraftConsumed,
   onBack,
+  online = false,
+  live = false,
+  room,
+  onTypingChange,
 }) {
   const [draft, setDraft] = useState('')
   const [atBottom, setAtBottom] = useState(true)
   const scrollRef = useRef(null)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
+  const typingTimer = useRef(null)
   const partner = USERS[partnerId]
+
+  const lastIncoming = useMemo(
+    () => [...messages].reverse().find((m) => m.from === partnerId),
+    [messages, partnerId],
+  )
+  const lastSeenLabel = lastIncoming ? `last seen ${relativeTime(lastIncoming.ts)}` : 'offline'
 
   const rows = useMemo(() => {
     const out = []
@@ -120,68 +120,95 @@ export default function ChatWindow({
     onDraftConsumed?.()
   }, [injectedDraft, onDraftConsumed])
 
+  // Broadcast "typing" on the first keystroke, then stop 2s after the last one.
+  const handleDraft = (value) => {
+    setDraft(value)
+    if (!onTypingChange) return
+    if (!typingTimer.current) onTypingChange(true)
+    else clearTimeout(typingTimer.current)
+    typingTimer.current = setTimeout(() => {
+      typingTimer.current = null
+      onTypingChange(false)
+    }, 2000)
+  }
+
+  useEffect(() => () => clearTimeout(typingTimer.current), [])
+
   const send = (e) => {
     e?.preventDefault()
     const text = draft.trim()
     if (!text) return
+    clearTimeout(typingTimer.current)
+    typingTimer.current = null
+    onTypingChange?.(false)
     onSend(text)
     setDraft('')
     setAtBottom(true)
   }
 
   return (
-    <section className="relative flex min-w-0 flex-1 flex-col bg-wa-bg">
-      {/* Header */}
-      <header className="z-20 flex items-center gap-3 border-b border-white/5 bg-wa-panel px-2 py-2 sm:px-4">
+    <section className="relative flex min-w-0 flex-1 flex-col bg-tm-bg">
+      {/* Header — presence, search, and the scan button. No call icons. */}
+      <header className="z-20 flex items-center gap-2.5 border-b border-white/5 bg-tm-panel px-2 py-2 sm:gap-3 sm:px-4">
         <button
           onClick={onBack}
-          className="grid h-9 w-9 place-items-center rounded-full text-wa-muted transition hover:bg-wa-panel-2 md:hidden"
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-tm-muted transition hover:bg-tm-panel-2 md:hidden"
           aria-label="Back to chats"
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
-        <Avatar user={partner} size="md" online />
+        <Avatar user={partner} size="md" online={online} ring={online} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-medium text-wa-text">{partner.name}</p>
-          <p className="truncate text-xs text-wa-muted">
+          <p className="truncate text-[15px] font-medium text-tm-text">{partner.name}</p>
+          <p className="truncate text-xs">
             {typing ? (
-              <span className="text-wa-teal-bright">typing…</span>
+              <span className="text-tm-rose-bright">typing…</span>
+            ) : online ? (
+              <span className="text-emerald-400/90">online</span>
             ) : (
-              'online · end-to-end encrypted'
+              <span className="text-tm-muted">{lastSeenLabel}</span>
             )}
           </p>
         </div>
 
+        <span
+          className={cn(
+            'hidden shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-[10.5px] font-medium sm:inline-flex',
+            live
+              ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+              : 'border-white/10 text-tm-muted',
+          )}
+          title={live ? `Live sync · room ${room}` : 'Offline — messages stay on this device'}
+        >
+          {live ? <Cloud className="h-3.5 w-3.5" /> : <CloudOff className="h-3.5 w-3.5" />}
+          {live ? 'Live' : 'Local'}
+        </span>
+
         <button
           onClick={onOpenScan}
-          className="group relative flex items-center gap-2 rounded-xl bg-wa-teal px-3 py-2 text-xs font-semibold text-wa-bg transition hover:bg-wa-teal-bright active:scale-[0.98] sm:px-4"
+          className="group relative flex shrink-0 items-center gap-2 rounded-xl bg-tm-rose px-3 py-2 text-xs font-semibold text-white transition hover:bg-tm-rose-bright active:scale-[0.98] sm:px-4"
           style={{ animation: 'pulse-glow 2.4s ease-in-out infinite' }}
-          title="Run Sneaky Lie & Deception Scan"
+          title="Run Sneaky Lie Scan"
         >
           <span className="text-sm leading-none">🕵️‍♂️</span>
-          <span className="hidden sm:inline">Run Sneaky Lie &amp; Deception Scan</span>
+          <span className="hidden sm:inline">Run Sneaky Lie Scan</span>
           <span className="sm:hidden">Scan</span>
         </button>
 
-        <div className="hidden items-center text-wa-muted lg:flex">
-          {[Video, Phone, Search, MoreVertical].map((Icon, i) => (
-            <button
-              key={i}
-              className="grid h-9 w-9 place-items-center rounded-full transition hover:bg-wa-panel-2 hover:text-wa-text"
-              aria-label="Chat action"
-            >
-              <Icon className="h-[18px] w-[18px]" />
-            </button>
-          ))}
-        </div>
+        <button
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-tm-muted transition hover:bg-tm-panel-2 hover:text-tm-text"
+          aria-label="Search in conversation"
+        >
+          <Search className="h-[18px] w-[18px]" />
+        </button>
       </header>
 
       {/* Feed */}
       <div ref={scrollRef} className="chat-wallpaper flex-1 overflow-y-auto py-3">
         <div className="mx-auto flex max-w-4xl flex-col gap-0.5">
           <div className="mx-3 mb-4 flex justify-center sm:mx-6">
-            <p className="max-w-md rounded-lg bg-amber-400/10 px-3 py-2 text-center text-[11px] leading-relaxed text-amber-200/80">
-              🔒 Messages are end-to-end encrypted. No one outside of this chat can read them.
+            <p className="max-w-md rounded-lg bg-tm-rose/10 px-3 py-2 text-center text-[11px] leading-relaxed text-tm-rose-soft/90">
+              💕 Just the two of you. Messages sync live between your devices.
             </p>
           </div>
 
@@ -218,7 +245,7 @@ export default function ChatWindow({
               bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
               setAtBottom(true)
             }}
-            className="absolute bottom-24 right-5 grid h-10 w-10 place-items-center rounded-full bg-wa-panel-2 text-wa-text shadow-lg shadow-black/40 transition hover:bg-wa-panel-3"
+            className="absolute bottom-24 right-5 grid h-10 w-10 place-items-center rounded-full bg-tm-panel-2 text-tm-text shadow-lg shadow-black/40 transition hover:bg-tm-panel-3"
             aria-label="Jump to latest message"
           >
             <ArrowDown className="h-4.5 w-4.5" />
@@ -229,18 +256,18 @@ export default function ChatWindow({
       {/* Composer */}
       <form
         onSubmit={send}
-        className="flex items-end gap-2 border-t border-white/5 bg-wa-panel px-2 py-2.5 sm:px-4"
+        className="flex items-end gap-2 border-t border-white/5 bg-tm-panel px-2 py-2.5 sm:px-4"
       >
         <button
           type="button"
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-wa-muted transition hover:bg-wa-panel-2 hover:text-wa-text"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-tm-muted transition hover:bg-tm-panel-2 hover:text-tm-text"
           aria-label="Emoji"
         >
           <Smile className="h-5 w-5" />
         </button>
         <button
           type="button"
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-wa-muted transition hover:bg-wa-panel-2 hover:text-wa-text"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-tm-muted transition hover:bg-tm-panel-2 hover:text-tm-text"
           aria-label="Attach"
         >
           <Paperclip className="h-5 w-5" />
@@ -249,20 +276,20 @@ export default function ChatWindow({
           ref={inputRef}
           rows={1}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => handleDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) send(e)
           }}
-          placeholder={`Message as ${USERS[viewingAs].name.split(' ')[0]}…`}
-          className="max-h-32 min-h-[42px] flex-1 resize-none rounded-2xl bg-wa-panel-2 px-4 py-2.5 text-[14.5px] text-wa-text placeholder:text-wa-muted/70 focus:outline-none focus:ring-1 focus:ring-wa-teal/40"
+          placeholder={`Message as ${USERS[viewingAs].name}…`}
+          className="max-h-32 min-h-[42px] flex-1 resize-none rounded-2xl bg-tm-panel-2 px-4 py-2.5 text-[14.5px] text-tm-text placeholder:text-tm-muted/70 focus:outline-none focus:ring-1 focus:ring-tm-rose/40"
         />
         <button
           type="submit"
           className={cn(
             'grid h-10 w-10 shrink-0 place-items-center rounded-full transition',
             draft.trim()
-              ? 'bg-wa-teal text-wa-bg hover:bg-wa-teal-bright'
-              : 'text-wa-muted hover:bg-wa-panel-2 hover:text-wa-text',
+              ? 'bg-tm-rose text-tm-bg hover:bg-tm-rose-bright'
+              : 'text-tm-muted hover:bg-tm-panel-2 hover:text-tm-text',
           )}
           aria-label={draft.trim() ? 'Send' : 'Record voice message'}
         >
