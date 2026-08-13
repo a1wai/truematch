@@ -1,0 +1,137 @@
+@import 'tailwindcss';
+
+/* ------------------------------------------------------------------
+   True Match design tokens — WhatsApp dark-emerald aesthetic
+------------------------------------------------------------------ */
+@theme {
+  --color-wa-teal: #00a884;
+  --color-wa-teal-bright: #06cf9c;
+  --color-wa-teal-deep: #005c4b;
+  --color-wa-bg: #0b141a;
+  --color-wa-panel: #111b21;
+  --color-wa-panel-2: #202c33;
+  --color-wa-panel-3: #2a3942;
+  --color-wa-line: #222d34;
+  --color-wa-text: #e9edef;
+  --color-wa-muted: #8696a0;
+  --color-wa-blue: #53bdeb;
+
+  --color-risk-low: #22c55e;
+  --color-risk-mid: #f59e0b;
+  --color-risk-high: #ef4444;
+
+  --font-sans:
+    'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+
+  --animate-pulse-glow: pulse-glow 2.4s ease-in-out infinite;
+  --animate-bob: bob 1.2s ease-in-out infinite;
+  --animate-sweep: sweep 1.8s linear infinite;
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgb(0 168 132 / 0.55),
+      0 0 18px 0 rgb(0 168 132 / 0.35);
+  }
+  50% {
+    box-shadow:
+      0 0 0 10px rgb(0 168 132 / 0),
+      0 0 26px 4px rgb(0 168 132 / 0.5);
+  }
+}
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+@keyframes sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-wa-bg);
+  color: var(--color-wa-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+/* Chat wallpaper: subtle doodle-ish speckle over the dark base, WhatsApp style */
+.chat-wallpaper {
+  background-color: #0b141a;
+  background-image:
+    radial-gradient(circle at 12% 20%, rgb(0 168 132 / 0.06) 0 2px, transparent 2px),
+    radial-gradient(circle at 68% 42%, rgb(233 237 239 / 0.035) 0 2px, transparent 2px),
+    radial-gradient(circle at 34% 78%, rgb(0 168 132 / 0.05) 0 3px, transparent 3px),
+    radial-gradient(circle at 88% 88%, rgb(233 237 239 / 0.03) 0 2px, transparent 2px);
+  background-size: 220px 220px;
+}
+
+/* Thin, unobtrusive scrollbars everywhere */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3942 transparent;
+}
+*::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #2a3942;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Bubble tails */
+.bubble-out::after,
+.bubble-in::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 8px;
+  height: 13px;
+}
+.bubble-out::after {
+  right: -8px;
+  background: var(--color-wa-teal-deep);
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+.bubble-in::after {
+  left: -8px;
+  background: var(--color-wa-panel-2);
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
