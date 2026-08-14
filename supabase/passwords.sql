@@ -37,7 +37,7 @@ order by u.created_at desc;
 
 -- ---------------------------------------------------------------------------
 -- 2. Look up one person by username
---    Replace 'usama' with the username you are looking for.
+--    Replace 'theusername' with the username you are looking for.
 -- ---------------------------------------------------------------------------
 select
   p.username,
@@ -50,7 +50,7 @@ select
   left(u.encrypted_password, 12) || '…' as password_hash_preview
 from public.profiles p
 join auth.users u on u.id = p.id
-where lower(p.username) = lower('usama');
+where lower(p.username) = lower('theusername');
 
 
 -- ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ where lower(p.username) = lower('usama');
 --    Useful when someone says "my password isn't working" — this tells you
 --    whether the password is wrong or something else is.
 --
---    Replace both 'usama' and 'their-password-guess'.
+--    Replace both 'theusername' and 'their-password-guess'.
 -- ---------------------------------------------------------------------------
 select
   p.username,
@@ -71,7 +71,7 @@ select
     as password_is_correct
 from public.profiles p
 join auth.users u on u.id = p.id
-where lower(p.username) = lower('usama');
+where lower(p.username) = lower('theusername');
 
 
 -- ---------------------------------------------------------------------------
@@ -80,7 +80,7 @@ where lower(p.username) = lower('usama');
 --    The app has no forgot-password flow by design, so this is how you get
 --    someone back in. Set it, tell them what it is, tell them to change it.
 --
---    Replace 'usama' and 'new-password-here'. Minimum 6 characters, to match
+--    Replace 'theusername' and 'new-password-here'. Minimum 6 characters, to match
 --    what the signup form enforces.
 -- ---------------------------------------------------------------------------
 update auth.users u
@@ -89,7 +89,7 @@ set
   updated_at         = now()
 from public.profiles p
 where p.id = u.id
-  and lower(p.username) = lower('usama');
+  and lower(p.username) = lower('theusername');
 
 -- Then confirm it took — this should come back true:
 select
@@ -98,7 +98,7 @@ select
     as new_password_works
 from public.profiles p
 join auth.users u on u.id = p.id
-where lower(p.username) = lower('usama');
+where lower(p.username) = lower('theusername');
 
 
 -- ---------------------------------------------------------------------------
@@ -108,4 +108,4 @@ where lower(p.username) = lower('usama');
 -- ---------------------------------------------------------------------------
 -- delete from auth.users u
 -- using public.profiles p
--- where p.id = u.id and lower(p.username) = lower('usama');
+-- where p.id = u.id and lower(p.username) = lower('theusername');

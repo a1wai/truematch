@@ -16,7 +16,6 @@ import { LocalNotifications } from '@capacitor/local-notifications'
    ================================================================== */
 
 const native = Capacitor.isNativePlatform()
-let ready = false
 let appActive = true
 
 /** Track foreground state so an open app does not notify about itself. */
@@ -60,9 +59,45 @@ export function onNotificationTap(handler) {
   }
 }
 
-/** Ask once, after login. Silent if the user says no — notifications are not essential. */
+/**
+ * What the OS currently thinks, without asking for anything.
+ * 'granted' | 'denied' | 'ask' | 'unsupported'
+ */
+export async function notificationStatus() {
+  try {
+    if (native) {
+      const status = await LocalNotifications.checkPermissions()
+      if (status.display === 'granted') return 'granted'
+      if (status.display === 'denied') return 'denied'
+      return 'ask'
+    }
+    if (typeof Notification === 'undefined') return 'unsupported'
+    if (Notification.permission === 'granted') return 'granted'
+    if (Notification.permission === 'denied') return 'denied'
+    return 'ask'
+  } catch {
+    return 'unsupported'
+  }
+}
+
+/** Prove it works, from the settings menu. */
+export async function sendTestNotification() {
+  const granted = await ensureNotificationPermission()
+  if (!granted) return false
+  await notifyMessage({
+    title: 'True Match',
+    body: 'Notifications are working.',
+    conversationId: 'test',
+  })
+  return true
+}
+
+/**
+ * Ask for permission. Safe to call repeatedly — it re-checks the OS each
+ * time rather than trusting a flag, so the button in the menu still works
+ * after the user changes their mind in system settings.
+ */
 export async function ensureNotificationPermission() {
-  if (ready) return true
   try {
     if (native) {
       const status = await LocalNotifications.checkPermissions()
@@ -81,19 +116,14 @@ export async function ensureNotificationPermission() {
         lightColor: '#FF2E63',
         vibration: true,
       }).catch(() => {})
-      ready = true
       return true
     }
 
     if (typeof Notification === 'undefined') return false
-    if (Notification.permission === 'granted') {
-      ready = true
-      return true
-    }
+    if (Notification.permission === 'granted') return true
     if (Notification.permission === 'denied') return false
     const result = await Notification.requestPermission()
-    ready = result === 'granted'
-    return ready
+    return result === 'granted'
   } catch {
     return false
   }

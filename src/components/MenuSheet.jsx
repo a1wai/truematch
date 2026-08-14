@@ -1,7 +1,12 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Camera, Loader2, LogOut, Sliders, X } from 'lucide-react'
+import { Bell, BellOff, Camera, Check, Loader2, LogOut, Sliders, X } from 'lucide-react'
 import { fileToAttachment } from '../lib/image.js'
+import {
+  ensureNotificationPermission,
+  notificationStatus,
+  sendTestNotification,
+} from '../lib/notify.js'
 import Avatar from './Avatar.jsx'
 
 /**
@@ -12,6 +17,25 @@ export default function MenuSheet({ open, profile, onClose, onOpenSettings, onSi
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const fileRef = useRef(null)
+
+  // Notification state, re-read every time the sheet opens — the user may
+  // have changed it in Android settings since last time.
+  const [notify, setNotify] = useState('ask')
+  const [tested, setTested] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    setTested(false)
+    notificationStatus().then(setNotify)
+  }, [open])
+
+  const turnOnNotifications = async () => {
+    const granted = await ensureNotificationPermission()
+    setNotify(await notificationStatus())
+    if (granted) {
+      await sendTestNotification()
+      setTested(true)
+    }
+  }
 
   const changePhoto = async (event) => {
     const input = event.target
@@ -88,6 +112,49 @@ export default function MenuSheet({ open, profile, onClose, onOpenSettings, onSi
             )}
 
             <div className="p-2">
+              {notify !== 'unsupported' && (
+                <button
+                  onClick={notify === 'denied' ? undefined : turnOnNotifications}
+                  disabled={notify === 'denied'}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-3.5 text-left transition active:bg-tm-panel-2 disabled:active:bg-transparent"
+                >
+                  <span
+                    className={
+                      notify === 'granted'
+                        ? 'grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-tm-rose/15 text-tm-rose-bright'
+                        : 'grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-tm-panel-2 text-tm-muted'
+                    }
+                  >
+                    {notify === 'denied' ? (
+                      <BellOff className="h-4.5 w-4.5" />
+                    ) : (
+                      <Bell className="h-4.5 w-4.5" />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[14px] font-medium text-tm-text">
+                      {notify === 'granted'
+                        ? 'Notifications are on'
+                        : notify === 'denied'
+                          ? 'Notifications are blocked'
+                          : 'Turn on notifications'}
+                    </span>
+                    <span className="block text-[11.5px] text-tm-muted">
+                      {notify === 'denied'
+                        ? 'Blocked. Turn them on for True Match in Android settings.'
+                        : notify === 'granted'
+                          ? tested
+                            ? 'Test sent — check your notification shade'
+                            : 'Tap to send yourself a test'
+                          : 'Get alerted the moment a message arrives'}
+                    </span>
+                  </span>
+                  {notify === 'granted' && tested && (
+                    <Check className="h-4 w-4 shrink-0 text-tm-rose-bright" />
+                  )}
+                </button>
+              )}
+
               <button
                 onClick={onOpenSettings}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-3.5 text-left transition active:bg-tm-panel-2"
