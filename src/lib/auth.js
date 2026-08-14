@@ -67,20 +67,47 @@ export async function signUp(settings, username, password) {
     throw new Error('That username is taken')
   }
 
+  // Preferred path: create the account in the database.
+  //
+  // Supabase Auth's sign-up endpoint is email-shaped — it tries to send
+  // confirmation mail, and two separate dashboard toggles can disable it
+  // outright. This app has usernames and no inboxes, so create_account() makes
+  // the auth row directly and marks it confirmed. Login below is still ordinary
+  // Supabase Auth.
+  const { error: rpcError } = await supabase.rpc('create_account', {
+    p_username: clean,
+    p_password: password,
+  })
+
+  if (rpcError) {
+    const missing =
+      /could not find the function|schema cache|does not exist|404/i.test(rpcError.message)
+    if (!missing) throw new Error(describeDbError(rpcError.message))
+    // Older setup that has not run the updated SQL yet — fall back to the
+    // built-in endpoint so the app still works.
+    return signUpViaAuthEndpoint(supabase, clean, password)
+  }
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: emailFor(clean),
+    password,
+  })
+  if (error) throw new Error(friendlyAuthError(error.message))
+  return loadProfile(settings, data.user.id)
+}
+
+/** Fallback for projects still on the older schema. */
+async function signUpViaAuthEndpoint(supabase, clean, password) {
   const { data, error } = await supabase.auth.signUp({
     email: emailFor(clean),
     password,
   })
   if (error) throw new Error(friendlyAuthError(error.message))
-
-  // No session means the project still has email confirmation switched on —
-  // fatal here, because these accounts have no real inbox to confirm from.
   if (!data.session) {
     throw new Error(
-      'This project still has email confirmation enabled. Turn it off under Authentication → Sign In / Providers → Email, then sign up again.',
+      'This project still has email confirmation enabled. Re-run supabase/setup.sql, or turn it off under Authentication → Sign In / Providers → Email.',
     )
   }
-
   const { error: profileError } = await supabase
     .from('profiles')
     .insert({ id: data.user.id, username: clean })
@@ -88,7 +115,6 @@ export async function signUp(settings, username, password) {
     if (/duplicate|unique/i.test(profileError.message)) throw new Error('That username is taken')
     throw new Error(describeDbError(profileError.message))
   }
-
   return { id: data.user.id, username: clean, avatar: null }
 }
 
@@ -169,6 +195,10 @@ export function describeDbError(message = '') {
 function friendlyAuthError(message = '') {
   const m = message.toLowerCase()
   if (m.includes('invalid login credentials')) return 'Wrong username or password'
+  if (m.includes('signups not allowed') || m.includes('email signups are disabled') ||
+      m.includes('signup_disabled') || m.includes('email_provider_disabled')) {
+    return 'Sign-ups are switched off in Supabase. Re-run supabase/setup.sql so the app can create accounts itself, or re-enable the Email provider.'
+  }
   if (m.includes('user already registered')) return 'That username is taken'
   if (m.includes('password should be')) return 'Password must be at least 6 characters'
   if (m.includes('email address') && m.includes('invalid')) {
