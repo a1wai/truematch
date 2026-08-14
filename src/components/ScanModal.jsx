@@ -481,19 +481,24 @@ export default function ScanModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-0 backdrop-blur-sm sm:p-4"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-md sm:items-center sm:p-4"
           onClick={onClose}
         >
           <motion.div
-            initial={{ opacity: 0, y: 24, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 16, scale: 0.98 }}
-            transition={{ type: 'spring', damping: 26, stiffness: 260 }}
+            initial={{ opacity: 0, y: 60 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            transition={{ type: 'spring', damping: 30, stiffness: 300 }}
             onClick={(e) => e.stopPropagation()}
-            className="flex h-dvh w-full flex-col overflow-hidden border-white/10 bg-tm-panel shadow-2xl sm:h-[92vh] sm:max-w-6xl sm:rounded-2xl sm:border"
+            className="flex h-[75dvh] w-full flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-tm-panel/95 shadow-2xl shadow-black/60 backdrop-blur-xl sm:h-[85vh] sm:max-w-6xl sm:rounded-3xl"
           >
+            {/* Sheet handle */}
+            <div className="flex shrink-0 justify-center pt-2.5 sm:hidden">
+              <span className="h-1 w-10 rounded-full bg-white/20" />
+            </div>
+
             {/* Header */}
-            <header className="flex items-center gap-3 border-b border-white/5 bg-tm-panel px-4 py-3 sm:px-6">
+            <header className="flex shrink-0 items-center gap-3 border-b border-white/5 px-4 py-3 sm:px-6">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-tm-rose/15 text-xl">
                 🕵️‍♂️
               </span>
@@ -779,7 +784,7 @@ export default function ScanModal({
             )}
 
             {/* Footer */}
-            <footer className="flex flex-wrap items-center gap-2 border-t border-white/5 bg-tm-panel px-4 py-3 sm:px-6">
+            <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-white/5 px-4 py-3 sm:px-6">
               <button
                 onClick={onToggleReveal}
                 className={cn(

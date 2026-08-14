@@ -11,14 +11,11 @@ import {
   MessageCircleHeart,
   Search,
   Send,
-  Smile,
-  Sparkles,
   X,
 } from 'lucide-react'
 import { fileToAttachment } from '../lib/image.js'
 import { cn, dayLabel, relativeTime, startOfDay } from '../lib/utils.js'
 import Avatar from './Avatar.jsx'
-import EmojiPicker from './EmojiPicker.jsx'
 import MessageBubble from './MessageBubble.jsx'
 
 function DaySeparator({ ts }) {
@@ -55,7 +52,7 @@ function TypingIndicator({ user }) {
   )
 }
 
-function EmptyState({ partner, partnerName, isAI }) {
+function EmptyState({ partnerName }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-8 py-16 text-center">
       <span className="relative mb-5 grid h-20 w-20 place-items-center">
@@ -63,19 +60,12 @@ function EmptyState({ partner, partnerName, isAI }) {
           className="absolute inset-0 rounded-full bg-tm-rose/20 blur-xl"
           style={{ animation: 'heartbeat 2.6s ease-in-out infinite' }}
         />
-        {isAI ? (
-          <Sparkles className="relative h-8 w-8 text-tm-rose" />
-        ) : (
-          <MessageCircleHeart className="relative h-8 w-8 text-tm-rose" />
-        )}
+        <MessageCircleHeart className="relative h-8 w-8 text-tm-rose" />
       </span>
-      <p className="text-[15px] font-semibold text-tm-text">
-        {isAI ? `Say hi to ${partnerName}` : `No messages with ${partnerName} yet`}
-      </p>
+      <p className="text-[15px] font-semibold text-tm-text">No messages with {partnerName} yet</p>
       <p className="mt-2 max-w-xs text-[13px] leading-relaxed text-tm-muted">
-        {isAI
-          ? 'She texts like a friend — vent, overthink out loud, or just say salam.'
-          : 'Send the first message. Once there is a bit of history here, the scan has something to work with.'}
+        Send the first message. Once there is a bit of history here, the scan has something to work
+        with.
       </p>
     </div>
   )
@@ -99,12 +89,10 @@ export default function ChatWindow({
   live = false,
   connectionError = false,
   onTypingChange,
-  isAI = false,
 }) {
   const partnerName = partner.name || `@${partner.username}`
   const [draft, setDraft] = useState('')
   const [atBottom, setAtBottom] = useState(true)
-  const [emojiOpen, setEmojiOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [matchIndex, setMatchIndex] = useState(0)
@@ -222,7 +210,6 @@ export default function ChatWindow({
     typingTimer.current = null
     onTypingChange?.(false)
     setDraft('')
-    setEmojiOpen(false)
     setAtBottom(true)
     setSending(true)
     try {
@@ -253,10 +240,6 @@ export default function ChatWindow({
     }
   }
 
-  const insertEmoji = (emoji) => {
-    setDraft((d) => d + emoji)
-    inputRef.current?.focus()
-  }
 
   return (
     <section className="relative flex min-w-0 flex-1 flex-col bg-tm-bg">
@@ -273,11 +256,6 @@ export default function ChatWindow({
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 truncate text-[15px] font-medium text-tm-text">
             {partnerName}
-            {isAI && (
-              <span className="rounded bg-tm-rose/15 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-tm-rose-bright">
-                AI
-              </span>
-            )}
           </p>
           <p className="truncate text-xs">
             {typing ? (
@@ -290,8 +268,7 @@ export default function ChatWindow({
           </p>
         </div>
 
-        {!isAI && (
-          <span
+        <span
             className={cn(
               'hidden shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1 text-[10.5px] font-medium lg:inline-flex',
               live
@@ -304,21 +281,17 @@ export default function ChatWindow({
           >
             {live ? <Cloud className="h-3.5 w-3.5" /> : <CloudOff className="h-3.5 w-3.5" />}
             {live ? 'Live' : connectionError ? 'Offline' : '…'}
-          </span>
-        )}
+        </span>
 
-        {!isAI && (
-          <button
-            onClick={onOpenScan}
-            className="group relative flex shrink-0 items-center gap-1.5 rounded-xl bg-tm-rose px-2.5 py-2.5 text-xs font-semibold text-white transition active:scale-95 hover:bg-tm-rose-bright sm:gap-2 sm:px-4"
-            style={{ animation: 'pulse-glow 2.4s ease-in-out infinite' }}
-            title="Run Sneaky Lie Scan"
-          >
-            <span className="text-sm leading-none">🕵️‍♂️</span>
-            <span className="hidden md:inline">Run Sneaky Lie Scan</span>
-            <span className="md:hidden">Scan</span>
-          </button>
-        )}
+        <button
+          onClick={onOpenScan}
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-tm-rose text-lg leading-none transition active:scale-90 hover:bg-tm-rose-bright"
+          style={{ animation: 'pulse-glow 2.4s ease-in-out infinite' }}
+          title="Run Sneaky Lie Scan"
+          aria-label="Run Sneaky Lie Scan"
+        >
+          🕵️‍♂️
+        </button>
 
         <button
           onClick={() => {
@@ -384,7 +357,7 @@ export default function ChatWindow({
       {/* Feed */}
       <div ref={scrollRef} className="chat-wallpaper flex flex-1 flex-col overflow-y-auto overflow-x-hidden py-3">
         {messages.length === 0 ? (
-          <EmptyState partner={partner} partnerName={partnerName} isAI={isAI} />
+          <EmptyState partnerName={partnerName} />
         ) : (
           <div className="mx-auto flex w-full max-w-4xl flex-col gap-0.5">
             {rows.map((row) =>
@@ -429,7 +402,7 @@ export default function ChatWindow({
         )}
       </AnimatePresence>
 
-      {!isAI && connectionError && (
+      {connectionError && (
         <p className="shrink-0 bg-amber-500/15 px-4 py-1.5 text-center text-[11.5px] text-amber-200">
           Offline — reconnecting…
         </p>
@@ -444,25 +417,9 @@ export default function ChatWindow({
         onSubmit={send}
         className="relative flex items-end gap-1 border-t border-white/5 bg-tm-panel px-1.5 py-2 sm:gap-2 sm:px-4"
       >
-        <AnimatePresence>
-          {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
-        </AnimatePresence>
 
-        <button
-          type="button"
-          onClick={() => setEmojiOpen((v) => !v)}
-          className={cn(
-            'grid h-11 w-11 shrink-0 place-items-center rounded-full transition active:bg-tm-panel-2',
-            emojiOpen ? 'text-tm-rose-bright' : 'text-tm-muted hover:text-tm-text',
-          )}
-          aria-label="Emoji"
-        >
-          <Smile className="h-5 w-5" />
-        </button>
 
-        {!isAI && (
-          <>
-            <input
+        <input
               ref={fileRef}
               type="file"
               accept="image/*"
@@ -470,27 +427,24 @@ export default function ChatWindow({
               className="hidden"
               aria-hidden="true"
             />
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-tm-muted transition active:bg-tm-panel-2 hover:text-tm-text"
-              aria-label="Send a photo"
-            >
-              <ImagePlus className="h-5 w-5" />
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-tm-muted transition active:bg-tm-panel-2 hover:text-tm-text"
+          aria-label="Send a photo"
+        >
+          <ImagePlus className="h-5 w-5" />
+        </button>
 
         <textarea
           ref={inputRef}
           rows={1}
           value={draft}
           onChange={(e) => handleDraft(e.target.value)}
-          onFocus={() => setEmojiOpen(false)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) send(e)
           }}
-          placeholder={isAI ? `Message ${partnerName}…` : 'Type a message…'}
+          placeholder="Type a message…"
           className="max-h-32 min-h-[44px] flex-1 resize-none rounded-2xl bg-tm-panel-2 px-4 py-3 text-[15px] text-tm-text placeholder:text-tm-muted/70 focus:outline-none focus:ring-1 focus:ring-tm-rose/40"
         />
 

@@ -3,12 +3,11 @@ import confetti from 'canvas-confetti'
 import { Heart } from 'lucide-react'
 import { analyzeConversation, TIMEFRAMES } from './lib/analysis.js'
 import { runLiveAnalysis, simplifyReport } from './lib/ai.js'
-import { COMPANION } from './lib/companion.js'
 import { resolveLanguage } from './lib/languages.js'
 import { buildPlainSummary } from './lib/report.js'
 import { loadReports, loadSettings, saveReport, saveSettings, wipeEverything } from './lib/storage.js'
-import { useAiChat } from './lib/use-ai-chat.js'
 import { useChat } from './lib/use-chat.js'
+import { ensureNotificationPermission, onNotificationTap } from './lib/notify.js'
 import { useConversations } from './lib/use-conversations.js'
 import { useSession } from './lib/use-session.js'
 import AddUserSheet from './components/AddUserSheet.jsx'
@@ -46,17 +45,20 @@ export default function App() {
   const [focusMessageId, setFocusMessageId] = useState(null)
   const [injectedDraft, setInjectedDraft] = useState(null)
 
-  const inbox = useConversations({ settings, profile })
-  const onAiChat = activeChat === 'ai'
-  const conversationId = onAiChat ? null : activeChat
+  const conversationId = activeChat
+  const inbox = useConversations({ settings, profile, activeConversationId: conversationId })
   const chat = useChat({ settings, profile, conversationId })
-  const ai = useAiChat({ settings, userId: profile?.id, userName: profile?.username || '' })
 
   const activeConversation = useMemo(
     () => inbox.conversations.find((c) => c.id === activeChat) || null,
     [inbox.conversations, activeChat],
   )
-  const partner = onAiChat ? COMPANION : activeConversation?.other || null
+  const partner = activeConversation?.other || null
+
+  // Asked once, after the first successful login.
+  useEffect(() => {
+    if (profile) ensureNotificationPermission()
+  }, [profile])
 
   const revealFlags = !settings.stealthMode
   const toggleReveal = () => setSettings((s) => ({ ...s, stealthMode: !s.stealthMode }))
@@ -78,12 +80,19 @@ export default function App() {
 
   /* ---------------------------------------------------------------- */
 
-  const openChat = (id) => {
-    setActiveChat(id)
-    setMobilePane('chat')
-    setReport(null)
-    setPlain(null)
-  }
+  const openChat = useCallback(
+    (id) => {
+      setActiveChat(id)
+      setMobilePane('chat')
+      setReport(null)
+      setPlain(null)
+      inbox.markConversationRead(id)
+    },
+    [inbox.markConversationRead],
+  )
+
+  // Tapping a notification should land on that thread, not the inbox.
+  useEffect(() => onNotificationTap(openChat), [openChat])
 
   const closeReport = () => {
     setScanOpen(false)
@@ -107,11 +116,9 @@ export default function App() {
 
   /* ---------------------------------------------------------------- */
 
-  const messages = onAiChat ? ai.messages : chat.messages
-
   const runScan = useCallback(
     async (tf = timeframe, langOverride) => {
-      if (!partner || onAiChat) return
+      if (!partner) return
       setScanning(true)
       setLiveError(null)
       setScanOpen(true)
@@ -189,7 +196,7 @@ export default function App() {
         Math.max(0, MIN_SCAN_MS - elapsed),
       )
     },
-    [chat.messages, settings, timeframe, partner, profile, onAiChat, later],
+    [chat.messages, settings, timeframe, partner, profile, later],
   )
 
   const handleSimplify = async () => {
@@ -240,7 +247,6 @@ export default function App() {
     setReport(null)
     setPlain(null)
     setReportCount(0)
-    ai.clear()
   }
 
   /* ---------------------------------------------------------------- */
@@ -297,8 +303,6 @@ export default function App() {
           profile={profile}
           conversations={inbox.conversations}
           loading={inbox.loading}
-          aiMessages={ai.messages}
-          companion={COMPANION}
           activeChat={activeChat}
           onSelectChat={openChat}
           onAddUser={() => setAddOpen(true)}
@@ -314,16 +318,15 @@ export default function App() {
           {partner ? (
             <ChatWindow
               key={activeChat}
-              isAI={onAiChat}
-              messages={messages}
-              viewingAs={onAiChat ? profile.id : profile.id}
+              messages={chat.messages}
+              viewingAs={profile.id}
               partner={partner}
-              typing={onAiChat ? ai.typing : chat.partnerTyping}
-              online={onAiChat ? true : chat.partnerOnline}
-              live={onAiChat ? false : chat.status === 'live'}
-              connectionError={onAiChat ? null : chat.status === 'error'}
-              onTypingChange={onAiChat ? undefined : chat.setTyping}
-              onSend={onAiChat ? ai.send : chat.send}
+              typing={chat.partnerTyping}
+              online={chat.partnerOnline}
+              live={chat.status === 'live'}
+              connectionError={chat.status === 'error'}
+              onTypingChange={chat.setTyping}
+              onSend={chat.send}
               onOpenScan={() => runScan(timeframe)}
               flaggedIds={flaggedIds}
               highlightsById={highlightsById}
@@ -365,7 +368,7 @@ export default function App() {
         onSaveAvatar={session.saveAvatar}
       />
 
-      {partner && !onAiChat && (
+      {partner && (
         <ScanModal
           open={scanOpen}
           scanning={scanning}

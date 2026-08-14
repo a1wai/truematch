@@ -2,7 +2,7 @@ import { Loader2, Settings, Sparkles, UserPlus } from 'lucide-react'
 import { cn, timeLabel } from '../lib/utils.js'
 import Avatar from './Avatar.jsx'
 
-function Row({ user, isAI, active, last, unread, meId, onSelect }) {
+function Row({ user, active, last, unread, meId, onSelect }) {
   const preview = last?.text || (last?.attachment ? '📷 Photo' : 'Tap to start chatting')
   return (
     <button
@@ -12,18 +12,13 @@ function Row({ user, isAI, active, last, unread, meId, onSelect }) {
         active ? 'bg-tm-panel-2/70' : 'hover:bg-tm-panel-2/40',
       )}
     >
-      <Avatar user={user} size="lg" online={isAI} />
+      <Avatar user={user} size="lg" />
       <span className="min-w-0 flex-1">
         <span className="flex items-baseline justify-between gap-2">
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="truncate text-[15px] font-medium text-tm-text">
               {user.name || `@${user.username}`}
             </span>
-            {isAI && (
-              <span className="shrink-0 rounded bg-tm-rose/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-tm-rose-bright">
-                AI
-              </span>
-            )}
           </span>
           <span className={cn('shrink-0 text-[11px]', unread ? 'text-tm-rose-bright' : 'text-tm-muted')}>
             {last ? timeLabel(last.ts) : ''}
@@ -49,16 +44,12 @@ export default function Sidebar({
   profile,
   conversations,
   loading,
-  aiMessages,
-  companion,
   activeChat,
   onSelectChat,
   onAddUser,
   onOpenMenu,
   className,
 }) {
-  const aiLast = aiMessages[aiMessages.length - 1]
-
   return (
     <aside
       className={cn(
@@ -104,15 +95,6 @@ export default function Sidebar({
           />
         ))}
 
-        <Row
-          user={companion}
-          isAI
-          active={activeChat === 'ai'}
-          last={aiLast ? { text: aiLast.text, ts: aiLast.ts, from: aiLast.from } : null}
-          unread={0}
-          meId={profile.id}
-          onSelect={() => onSelectChat('ai')}
-        />
 
         {loading && (
           <p className="flex items-center justify-center gap-2 px-4 py-6 text-[12.5px] text-tm-muted">
