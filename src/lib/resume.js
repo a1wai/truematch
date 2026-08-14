@@ -59,14 +59,24 @@ export function isOffline() {
   return typeof navigator !== 'undefined' && navigator.onLine === false
 }
 
+let lastReconnect = 0
+const RECONNECT_COOLDOWN_MS = 30000
+
 /**
  * Force the realtime socket to rebuild itself.
  *
  * After a suspend, supabase-js often believes it is still connected.
  * Disconnecting explicitly makes it notice, and every channel rejoins on
  * the next connect.
+ *
+ * Throttled: a busy conversation on a dead socket would otherwise ask for
+ * this every few seconds and never leave the socket alone long enough to
+ * finish rejoining.
  */
-export function reconnectRealtime(supabase) {
+export function reconnectRealtime(supabase, { force = false } = {}) {
+  const now = Date.now()
+  if (!force && now - lastReconnect < RECONNECT_COOLDOWN_MS) return
+  lastReconnect = now
   try {
     const socket = supabase?.realtime
     if (!socket) return
@@ -75,6 +85,6 @@ export function reconnectRealtime(supabase) {
     }
     socket.connect?.()
   } catch {
-    /* best effort — the poll below is what actually guarantees delivery */
+    /* best effort — the polling above is what actually guarantees delivery */
   }
 }

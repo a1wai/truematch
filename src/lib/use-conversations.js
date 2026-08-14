@@ -364,7 +364,7 @@ export function useConversations({ settings, profile, activeConversationId }) {
 
     const timer = setInterval(catchUp, POLL_MS)
     const stop = onResume(() => {
-      reconnectRealtime(supabase)
+      reconnectRealtime(supabase, { force: true })
       catchUp()
     })
     return () => {

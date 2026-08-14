@@ -243,7 +243,7 @@ export function useChat({ settings, profile, conversationId }) {
 
     const timer = setInterval(catchUp, CATCH_UP_MS)
     const stop = onResume(() => {
-      reconnectRealtime(supabase)
+      reconnectRealtime(supabase, { force: true })
       catchUp()
     })
     return () => {
