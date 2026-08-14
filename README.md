@@ -109,14 +109,17 @@ language.
 
 Reports export as JSON and the last 12 are kept on the device.
 
-## The AI friend
+## Notifications
 
-A second chat, **Zoya**, sits under your conversations. She texts like a friend
-rather than an assistant: short lines, matches whatever language you used
-including Roman Urdu, asks a follow-up instead of handing out advice. She needs
-a model key to be any good — without one she answers from a small local bank and
-says so once. Her thread is private to your account, stored on the device, and
-never part of a scan.
+New messages raise a notification the moment the row arrives over the realtime
+socket — no polling, no server round trip beyond the message itself. Tapping one
+opens that conversation. Nothing fires for your own messages, or for a thread
+you already have open.
+
+These are Capacitor local notifications, so they need the app process to be
+alive: foreground and backgrounded both work, fully swiped-away does not.
+Delivery to a killed app needs Firebase Cloud Messaging and a server to push
+from, which is a separate piece of work.
 
 ### How the detector works
 
