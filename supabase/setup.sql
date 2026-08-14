@@ -1,28 +1,10 @@
--- ===========================================================================
--- True Match — beta schema (accounts, contacts, conversations, messages)
---
--- Run once in the Supabase SQL editor:
---   Dashboard -> SQL Editor -> New query -> paste -> Run
---
--- ONE MANUAL STEP IS REQUIRED AS WELL:
---   Authentication -> Sign In / Providers -> Email -> turn "Confirm email" OFF.
---   Accounts here are username + password, so there is no inbox to confirm
---   from. With confirmation on, sign-up succeeds but login always fails.
--- ===========================================================================
+-- True Match — minimal setup. Paste ALL of this into the Supabase SQL editor
+-- and press Run. Safe to run more than once.
+-- After running, also turn OFF: Authentication -> Sign In / Providers -> Email
+-- -> "Confirm email". Accounts are username-only and have no inbox.
 
 create extension if not exists pgcrypto;
 
--- ---------------------------------------------------------------------------
--- Migration from the first build.
---
--- That version had a room-based `messages` table (room text, no
--- conversation_id). `create table if not exists` silently skips it, and then
--- the index below fails with: column "conversation_id" does not exist.
---
--- Only the legacy shape is dropped — a `messages` table that already has
--- conversation_id is left alone, so re-running this file never destroys real
--- conversations.
--- ---------------------------------------------------------------------------
 do $$
 begin
   if exists (
@@ -37,12 +19,6 @@ begin
   end if;
 end $$;
 
--- ---------------------------------------------------------------------------
--- Profiles: one row per account, keyed to Supabase Auth.
--- The app signs up with a synthetic address (<username>@truematch.app) so that
--- Supabase Auth still handles password hashing, sessions and refresh tokens —
--- the username is what people actually see and search by.
--- ---------------------------------------------------------------------------
 create table if not exists public.profiles (
   id          uuid primary key references auth.users (id) on delete cascade,
   username    text        not null,
@@ -50,13 +26,9 @@ create table if not exists public.profiles (
   created_at  timestamptz not null default now()
 );
 
--- Usernames are case-insensitive for uniqueness and lookup.
 create unique index if not exists profiles_username_lower_idx
   on public.profiles (lower(username));
 
--- ---------------------------------------------------------------------------
--- Conversations
--- ---------------------------------------------------------------------------
 create table if not exists public.conversations (
   id          uuid primary key default gen_random_uuid(),
   created_at  timestamptz not null default now()
@@ -85,7 +57,6 @@ create table if not exists public.messages (
 create index if not exists messages_conversation_created_idx
   on public.messages (conversation_id, created_at);
 
--- Realtime delivery, and full old-row data so status updates reach subscribers.
 alter table public.messages replica identity full;
 do $$
 begin
@@ -94,11 +65,6 @@ exception
   when duplicate_object then null;
 end $$;
 
--- ---------------------------------------------------------------------------
--- Membership check as SECURITY DEFINER.
--- A policy on conversation_members that queries conversation_members recurses
--- forever; routing through a definer function breaks that cycle.
--- ---------------------------------------------------------------------------
 create or replace function public.is_member(conv uuid)
 returns boolean
 language sql
@@ -112,10 +78,6 @@ as $$
   );
 $$;
 
--- ---------------------------------------------------------------------------
--- Open (or reopen) the 1:1 conversation between the caller and someone else.
--- Done server-side so two people tapping at once cannot create two rooms.
--- ---------------------------------------------------------------------------
 create or replace function public.start_direct_conversation(other uuid)
 returns uuid
 language plpgsql
@@ -148,9 +110,6 @@ begin
 end;
 $$;
 
--- ---------------------------------------------------------------------------
--- Row level security
--- ---------------------------------------------------------------------------
 alter table public.profiles             enable row level security;
 alter table public.conversations        enable row level security;
 alter table public.conversation_members enable row level security;
@@ -160,8 +119,6 @@ drop policy if exists "profiles are searchable" on public.profiles;
 drop policy if exists "insert own profile"      on public.profiles;
 drop policy if exists "update own profile"      on public.profiles;
 
--- Usernames and avatars are public so people can be found and added. Nothing
--- private lives on this table.
 create policy "profiles are searchable" on public.profiles
   for select using (true);
 create policy "insert own profile" on public.profiles
@@ -196,22 +153,3 @@ create policy "send conversation messages" on public.messages
 create policy "update conversation messages" on public.messages
   for update using (public.is_member(conversation_id))
   with check (public.is_member(conversation_id));
-
--- ---------------------------------------------------------------------------
--- What this does and does not protect
---
---   Messages are readable only by members of that conversation, enforced by
---   Postgres rather than by the client. The anon key alone gets a stranger
---   nothing without a valid login.
---
---   Profiles (username + avatar) are public by design — that is what makes
---   "add someone by username" work.
---
---   Anyone signed in can insert a membership row if they can guess a
---   conversation UUID. UUIDs are not guessable in practice, but if this grows
---   past beta, tighten "join conversations" to inserts made by
---   start_direct_conversation only.
---
---   There is no password recovery. Losing the password means losing the
---   account unless an admin resets it from the dashboard.
--- ---------------------------------------------------------------------------

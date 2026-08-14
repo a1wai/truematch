@@ -44,7 +44,7 @@ export default function AuthScreen({ mode: initialMode = 'login', onSignIn, onSi
   }
 
   return (
-    <div className="relative flex h-dvh flex-col overflow-hidden bg-tm-bg">
+    <div className="relative flex h-full flex-col overflow-hidden bg-tm-bg">
       <div className="pointer-events-none absolute -top-40 left-1/2 h-[26rem] w-[26rem] -translate-x-1/2 rounded-full bg-tm-rose/20 blur-[120px]" />
 
       <div className="relative flex flex-1 flex-col overflow-y-auto px-5 py-6">

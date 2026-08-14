@@ -81,10 +81,22 @@
   }
 }
 
+/*
+ * Native shell, not a web page: the viewport is pinned and nothing outside a
+ * designated scroller ever moves. `position: fixed` on body stops the Android
+ * WebView from rubber-banding or resizing the document when the keyboard opens.
+ */
 html,
-body,
-#root {
+body {
   height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
 }
 
 html {
@@ -148,10 +160,13 @@ select {
 }
 
 /*
- * Native shell: respect notches, punch-holes and gesture bars. Applied to #root
- * rather than body so the safe area is inside the app's own background.
+ * Respect notches, punch-holes and gesture bars. `box-sizing: border-box` is
+ * what keeps the insets *inside* the 100% height — without it the padding is
+ * added on top and the whole page scrolls by exactly the status-bar height.
  */
 #root {
+  height: 100%;
+  overflow: hidden;
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);

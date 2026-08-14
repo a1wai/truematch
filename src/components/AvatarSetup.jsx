@@ -42,7 +42,7 @@ export default function AvatarSetup({ username, onSave, onSignOut }) {
   }
 
   return (
-    <div className="relative flex h-dvh flex-col overflow-hidden bg-tm-bg">
+    <div className="relative flex h-full flex-col overflow-hidden bg-tm-bg">
       <div className="pointer-events-none absolute -top-32 left-1/2 h-80 w-80 -translate-x-1/2 rounded-full bg-tm-rose/20 blur-[110px]" />
 
       <div className="relative flex flex-1 flex-col overflow-y-auto px-6 py-8">

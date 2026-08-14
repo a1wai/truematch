@@ -55,7 +55,7 @@ export async function isUsernameTaken(settings, username) {
     .select('id')
     .eq('username', normalizeUsername(username))
     .maybeSingle()
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(describeDbError(error.message))
   return Boolean(data)
 }
 
@@ -86,7 +86,7 @@ export async function signUp(settings, username, password) {
     .insert({ id: data.user.id, username: clean })
   if (profileError) {
     if (/duplicate|unique/i.test(profileError.message)) throw new Error('That username is taken')
-    throw new Error(profileError.message)
+    throw new Error(describeDbError(profileError.message))
   }
 
   return { id: data.user.id, username: clean, avatar: null }
@@ -124,14 +124,14 @@ export async function loadProfile(settings, id) {
     .select('id, username, avatar')
     .eq('id', id)
     .maybeSingle()
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(describeDbError(error.message))
   if (!data) throw new Error('Profile missing for this account')
   return data
 }
 
 export async function updateAvatar(settings, id, avatar) {
   const { error } = await client(settings).from('profiles').update({ avatar }).eq('id', id)
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(describeDbError(error.message))
 }
 
 /** Username search for the "add someone" screen. Prefix match, case-insensitive. */
@@ -143,8 +143,26 @@ export async function searchProfiles(settings, query, excludeId) {
     .select('id, username, avatar')
     .ilike('username', `${q}%`)
     .limit(20)
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(describeDbError(error.message))
   return (data || []).filter((p) => p.id !== excludeId)
+}
+
+/**
+ * PostgREST reports a missing table as a "schema cache" miss, which tells the
+ * person holding the phone nothing. Name the actual fix instead.
+ */
+export function describeDbError(message = '') {
+  const m = message.toLowerCase()
+  if (m.includes('schema cache') || m.includes('does not exist') || m.includes('relation')) {
+    return 'The database is not set up yet. Run supabase/schema.sql in the Supabase SQL editor, then try again.'
+  }
+  if (m.includes('row-level security') || m.includes('violates row-level') || m.includes('permission denied')) {
+    return 'The database rejected that. Re-run supabase/schema.sql so the access policies are in place.'
+  }
+  if (m.includes('jwt') || m.includes('invalid api key') || m.includes('apikey')) {
+    return 'This build has the wrong project key. Check Settings → Realtime sync.'
+  }
+  return message
 }
 
 /** Supabase's auth errors are written for developers, not for this screen. */
@@ -157,5 +175,8 @@ function friendlyAuthError(message = '') {
     return 'That username cannot be used — try letters, numbers, dots or underscores'
   }
   if (m.includes('rate limit') || m.includes('too many')) return 'Too many attempts — wait a minute'
-  return message
+  if (m.includes('database error') || m.includes('unexpected_failure')) {
+    return 'The database is not set up yet. Run supabase/schema.sql in the Supabase SQL editor, then try again.'
+  }
+  return describeDbError(message)
 }
