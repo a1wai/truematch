@@ -277,20 +277,33 @@ export function useConversations({ settings, profile, activeConversationId }) {
      One narrow query — rows newer than the newest we hold — rather than
      rebuilding the whole inbox every few seconds. It almost always comes
      back empty, and when it does not the rows are folded in through the
-     same path a socket payload would take. A full refresh is only worth
-     it when something turns up from a conversation the list has never
-     seen.
+     same path a socket payload would take.
+
+     That query can only ask about conversations already known, so a full
+     refresh still runs now and then to notice someone starting a brand
+     new chat with you. With a healthy socket that arrives instantly on
+     the conversation_members subscription; this is for when it does not.
      ------------------------------------------------------------------ */
   useEffect(() => {
     const supabase = getClient(settings)
     if (!supabase || !profile) return undefined
 
     let running = false
+    let ticks = 0
     const catchUp = async () => {
       if (running) return
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       const ids = [...knownRef.current]
-      if (!ids.length) return
+      // Nothing to narrow against, or time for a full look.
+      if (!ids.length || (ticks += 1) % 5 === 0) {
+        running = true
+        try {
+          await refresh()
+        } finally {
+          running = false
+        }
+        return
+      }
       running = true
       try {
         let query = supabase
