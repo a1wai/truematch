@@ -45,6 +45,23 @@ jobs:
       - name: Sync web bundle into the Android project
         run: npx cap sync android
 
+      # Push notifications need Firebase's client config inside the APK. It is
+      # not really a secret — it ships in every copy of the app, and its key is
+      # locked to this package name — but a repository secret keeps it out of a
+      # public repo and lets the build work without it.
+      - name: Add Firebase config, if configured
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+            node -e "JSON.parse(require('fs').readFileSync('android/app/google-services.json','utf8'))" \
+              || { echo "::error::GOOGLE_SERVICES_JSON is not valid JSON"; exit 1; }
+            echo "Firebase config added — push notifications will be enabled."
+          else
+            echo "No GOOGLE_SERVICES_JSON secret. Building without push; everything else works."
+          fi
+
       - name: Assemble debug APK
         working-directory: android
         run: |

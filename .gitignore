@@ -35,6 +35,10 @@ android/.idea
 android/app/src/main/assets/public
 android/app/src/main/assets/capacitor.config.json
 android/app/src/main/assets/capacitor.plugins.json
+
+# Firebase client config. Ships inside the APK, so not a true secret, but it
+# names your project — CI writes it from the GOOGLE_SERVICES_JSON secret.
+android/app/google-services.json
 *.apk
 *.aab
 *.keystore

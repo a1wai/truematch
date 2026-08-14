@@ -180,34 +180,16 @@ private.push_failures order by at desc limit 20;` — rather than vanishing.
 
 ### Turning it on
 
-This needs a Firebase project, which has to be created under your own
-Google account. Until it is, everything above sits idle and the app behaves
+Push needs a Firebase project, which has to be created under your own Google
+account. **[PUSH-SETUP.md](PUSH-SETUP.md)** walks through it — about twenty
+minutes, four parts, with a fault-finding table at the end.
+
+Until that is done nothing breaks: the Gradle build skips the Firebase
+plugin, the trigger finds no endpoint and returns, and the app behaves
 exactly as it does now.
 
-1. **Firebase** — create a project at console.firebase.google.com, add an
-   Android app with the package name `app.truematch.duo`, download
-   `google-services.json` and put it in `android/app/`. The Gradle build
-   picks it up on its own; without it the build still succeeds and push is
-   simply inert.
-2. **Service account** — in Firebase, *Project settings → Service accounts →
-   Generate new private key*. That JSON is what lets the function send.
-3. **Database** — run `supabase/push.sql`, then uncomment and run the
-   config block at the bottom, choosing any long random string as the
-   secret.
-4. **Function** — deploy it and give it the two secrets:
-
-   ```
-   supabase secrets set PUSH_SECRET='<the same string>'
-   supabase secrets set FCM_SERVICE_ACCOUNT="$(cat service-account.json)"
-   supabase functions deploy push --no-verify-jwt
-   ```
-
-   `--no-verify-jwt` is deliberate: the caller is Postgres, not a signed-in
-   user, so it authenticates with `PUSH_SECRET` instead.
-5. **Rebuild the APK** and sign in again, so the phone registers a token.
-
-To check it is working, `select count(*) from device_tokens;` should be one
-row per signed-in phone, and `private.push_failures` should stay empty.
+CI reads the Firebase config from a `GOOGLE_SERVICES_JSON` repository
+secret, so nothing has to be committed to a public repo.
 
 ### How the detector works
 
