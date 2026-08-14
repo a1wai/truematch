@@ -99,7 +99,19 @@ export async function ensureNotificationPermission() {
   }
 }
 
-let counter = 1
+/**
+ * A stable positive int per conversation. Reusing the id means a second
+ * message from the same person replaces the first notification instead of
+ * stacking another one under it — one entry per thread, like every other
+ * messenger.
+ */
+function notificationId(conversationId) {
+  let h = 0
+  for (let i = 0; i < String(conversationId).length; i += 1) {
+    h = (h * 31 + String(conversationId).charCodeAt(i)) | 0
+  }
+  return Math.abs(h) % 2000000000 || 1
+}
 
 /**
  * Fire a notification for an incoming message.
@@ -112,16 +124,13 @@ export async function notifyMessage({ title, body, conversationId, suppress = fa
       await LocalNotifications.schedule({
         notifications: [
           {
-            id: (counter = (counter % 2000000000) + 1),
+            id: notificationId(conversationId),
             channelId: 'messages',
             title,
             body: body || 'Sent a photo',
             // White-silhouette status-bar icon; Android tints it with iconColor.
             smallIcon: 'ic_stat_truematch',
             iconColor: '#FF2E63',
-            // Same group + tag per thread, so a burst of messages collapses
-            // into one entry instead of stacking up.
-            group: conversationId,
             extra: { conversationId },
           },
         ],
