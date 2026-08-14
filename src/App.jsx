@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import confetti from 'canvas-confetti'
 import { Heart } from 'lucide-react'
+import { onHardwareBack } from './lib/back.js'
 import { analyzeConversation, TIMEFRAMES } from './lib/analysis.js'
 import { runLiveAnalysis, simplifyReport } from './lib/ai.js'
 import { resolveLanguage } from './lib/languages.js'
@@ -8,6 +9,7 @@ import { buildPlainSummary } from './lib/report.js'
 import { loadReports, loadSettings, saveReport, saveSettings, wipeEverything } from './lib/storage.js'
 import { useChat } from './lib/use-chat.js'
 import { ensureNotificationPermission, onNotificationTap } from './lib/notify.js'
+import { registerPush, unregisterPush } from './lib/push.js'
 import { useConversations } from './lib/use-conversations.js'
 import { useSession } from './lib/use-session.js'
 import AddUserSheet from './components/AddUserSheet.jsx'
@@ -55,9 +57,17 @@ export default function App() {
   )
   const partner = activeConversation?.other || null
 
-  // Asked once, after the first successful login.
+  // A push can be tapped before openChat exists further down, so the tap
+  // goes through a ref rather than capturing it.
+  const openChatRef = useRef(() => {})
+
+  // Asked once, after the first successful login. Local notifications cover
+  // the app being open or backgrounded; push covers it being closed.
   useEffect(() => {
-    if (profile) ensureNotificationPermission()
+    if (!profile) return
+    ensureNotificationPermission()
+    registerPush({ settings, profile, onOpenConversation: (id) => openChatRef.current(id) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile])
 
   const revealFlags = !settings.stealthMode
@@ -91,6 +101,8 @@ export default function App() {
     [inbox.markConversationRead],
   )
 
+  openChatRef.current = openChat
+
   // Tapping a notification should land on that thread, not the inbox.
   useEffect(() => onNotificationTap(openChat), [openChat])
 
@@ -99,12 +111,36 @@ export default function App() {
     setSimplified(false)
   }
 
+  /* ------------------------------------------------------------------
+     The device back gesture: peel off one layer at a time, outermost
+     first, the way every other app on the phone behaves. Only when
+     there is nothing left to close does the app exit.
+
+     Kept in a ref so the listener is registered once — re-registering
+     on every state change would drop presses in the gap.
+     ------------------------------------------------------------------ */
+  const backRef = useRef(() => false)
+  backRef.current = () => {
+    if (settingsOpen) return setSettingsOpen(false), true
+    if (menuOpen) return setMenuOpen(false), true
+    if (addOpen) return setAddOpen(false), true
+    if (scanOpen) return closeReport(), true
+    // On a phone the list and the chat are separate screens; on a wide
+    // screen they are side by side and there is nothing to go back to.
+    if (mobilePane === 'chat') return setMobilePane('list'), true
+    return false
+  }
+  useEffect(() => onHardwareBack(() => backRef.current()), [])
+
   const handleSignOut = async () => {
     setMenuOpen(false)
     setSettingsOpen(false)
     closeReport()
     setActiveChat(null)
     setMobilePane('list')
+    // Drop this phone's push token first, or whoever signs in next keeps
+    // getting the previous account's messages.
+    await unregisterPush({ settings, profile })
     await session.signOut()
   }
 

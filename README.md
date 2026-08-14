@@ -134,6 +134,15 @@ So nothing trusts the socket to be honest about itself. Underneath it:
 A query that returns at all proves there is a working connection, so the
 "reconnecting" banner clears even when the socket is still sulking.
 
+## Moving around
+
+The device back gesture peels one layer at a time — report, then sheet,
+then menu, then out of the conversation to the inbox — and only closes the
+app when there is nothing left to close, which is what every other app on
+the phone does. On Android that is Capacitor's `backButton`; in a browser
+the same handler answers the back button, which is also what makes it
+testable outside an APK.
+
 ## Notifications
 
 A new message raises a notification whichever path finds it first — socket or
@@ -146,10 +155,59 @@ The permission prompt at login is easy to miss, so the gear menu carries a
 **Turn on notifications** row that asks again, sends a test, and tells you
 plainly when Android has blocked them.
 
-These are Capacitor local notifications, so they need the app process to be
-alive: foreground and backgrounded both work, fully swiped-away does not.
-Delivery to a killed app needs Firebase Cloud Messaging and a server to push
-from, which is a separate piece of work.
+Those are local notifications, raised by the app about itself, so they need
+the app to be running. Foreground and backgrounded both work; swiped away
+does not, because nothing on a phone lets a dead process wake itself up.
+
+## Push, for when the app is closed
+
+That gap is what push is for, and it is how WhatsApp does it: Google holds
+one connection for the whole device, and hands the message over, starting
+the app if it has to.
+
+The pieces are all in the repo:
+
+| Where | What |
+| --- | --- |
+| `src/lib/push.js` | registers the device, stores its token, handles taps |
+| `supabase/push.sql` | `device_tokens` table, and a trigger on `messages` |
+| `supabase/functions/push/` | Edge Function that talks to Firebase |
+
+Sending is fire-and-forget: the trigger queues the request through `pg_net`
+and returns immediately, so a push outage can never stop someone sending a
+message. When one does fail it is recorded — `select * from
+private.push_failures order by at desc limit 20;` — rather than vanishing.
+
+### Turning it on
+
+This needs a Firebase project, which has to be created under your own
+Google account. Until it is, everything above sits idle and the app behaves
+exactly as it does now.
+
+1. **Firebase** — create a project at console.firebase.google.com, add an
+   Android app with the package name `app.truematch.duo`, download
+   `google-services.json` and put it in `android/app/`. The Gradle build
+   picks it up on its own; without it the build still succeeds and push is
+   simply inert.
+2. **Service account** — in Firebase, *Project settings → Service accounts →
+   Generate new private key*. That JSON is what lets the function send.
+3. **Database** — run `supabase/push.sql`, then uncomment and run the
+   config block at the bottom, choosing any long random string as the
+   secret.
+4. **Function** — deploy it and give it the two secrets:
+
+   ```
+   supabase secrets set PUSH_SECRET='<the same string>'
+   supabase secrets set FCM_SERVICE_ACCOUNT="$(cat service-account.json)"
+   supabase functions deploy push --no-verify-jwt
+   ```
+
+   `--no-verify-jwt` is deliberate: the caller is Postgres, not a signed-in
+   user, so it authenticates with `PUSH_SECRET` instead.
+5. **Rebuild the APK** and sign in again, so the phone registers a token.
+
+To check it is working, `select count(*) from device_tokens;` should be one
+row per signed-in phone, and `private.push_failures` should stay empty.
 
 ### How the detector works
 
