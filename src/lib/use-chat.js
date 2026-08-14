@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { onResume, reconnectRealtime } from './resume.js'
 import { getClient } from './supabase.js'
 import { uid } from './utils.js'
 
@@ -8,7 +9,17 @@ import { uid } from './utils.js'
    Messages, typing broadcasts, presence and read receipts all ride the
    same realtime channel. Everything is stored in Supabase — nothing
    about a conversation lives only on the device.
+
+   The socket delivers in milliseconds when it is healthy, but a phone
+   suspends the WebView the moment you switch apps and the socket can go
+   quiet without reporting an error. So a catch-up query runs alongside
+   it: every few seconds, and immediately on resume, ask for anything
+   newer than the newest message held. It normally returns nothing and
+   costs one indexed lookup — and it is the reason a chat cannot sit
+   there stale.
    ================================================================== */
+
+const CATCH_UP_MS = 6000
 
 function rowToMessage(row) {
   return {
@@ -32,6 +43,8 @@ export function useChat({ settings, profile, conversationId }) {
   const channelRef = useRef(null)
   const retryRef = useRef(null)
   const typingClearRef = useRef(null)
+  // Newest created_at we hold, so the catch-up query stays tiny.
+  const highWaterRef = useRef(null)
 
   useEffect(
     () => () => {
@@ -59,6 +72,8 @@ export function useChat({ settings, profile, conversationId }) {
     let cancelled = false
     setStatus('connecting')
     setError(null)
+    // Belongs to the conversation being left, not the one being opened.
+    highWaterRef.current = null
 
     const upsert = (incoming) =>
       setMessages((prev) => {
@@ -66,6 +81,14 @@ export function useChat({ settings, profile, conversationId }) {
         next.push(incoming)
         return next.sort((x, y) => x.ts - y.ts)
       })
+
+    const remember = (rows) => {
+      for (const row of rows) {
+        if (!highWaterRef.current || row.created_at > highWaterRef.current) {
+          highWaterRef.current = row.created_at
+        }
+      }
+    }
 
     async function connect() {
       const { data, error: loadError } = await supabase
@@ -83,6 +106,7 @@ export function useChat({ settings, profile, conversationId }) {
         return
       }
       setMessages(data.map(rowToMessage))
+      remember(data)
 
       const channel = supabase
         .channel(`conv:${conversationId}`, { config: { presence: { key: profile.id } } })
@@ -99,6 +123,7 @@ export function useChat({ settings, profile, conversationId }) {
               setMessages((prev) => prev.filter((m) => m.id !== payload.old?.id))
               return
             }
+            remember([payload.new])
             upsert(rowToMessage(payload.new))
           },
         )
@@ -148,6 +173,84 @@ export function useChat({ settings, profile, conversationId }) {
       setPartnerOnline(false)
     }
   }, [settings, profile, conversationId, attempt, scheduleRetry])
+
+  /* ------------------------------------------------------------------
+     The safety net.
+
+     Ask for anything newer than what we hold. Runs on a timer, and again
+     the moment the app is brought back to the foreground — which is
+     exactly when the socket has usually just been killed and has not
+     admitted it yet.
+     ------------------------------------------------------------------ */
+  useEffect(() => {
+    const supabase = getClient(settings)
+    if (!supabase || !profile || !conversationId) return undefined
+
+    let running = false
+    const catchUp = async () => {
+      if (running || typeof document === 'undefined') return
+      if (document.visibilityState === 'hidden') return
+      running = true
+      try {
+        let query = supabase
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true })
+          .limit(200)
+        if (highWaterRef.current) {
+          // Overlap by half a minute. Two phones do not agree on the time,
+          // and created_at is stamped by the sender — without the overlap a
+          // message from a slow clock could land below the mark and never
+          // be asked for. Rows are keyed by id, so re-reading is harmless.
+          query = query.gt(
+            'created_at',
+            new Date(Date.parse(highWaterRef.current) - 30000).toISOString(),
+          )
+        }
+
+        const { data, error: pollError } = await query
+        if (pollError) return
+
+        // A query that came back at all proves there is a working
+        // connection, whatever the socket believes about itself.
+        setStatus((s) => (s === 'error' ? 'live' : s))
+        if (!data?.length) return
+
+        for (const row of data) {
+          if (!highWaterRef.current || row.created_at > highWaterRef.current) {
+            highWaterRef.current = row.created_at
+          }
+        }
+        let added = false
+        setMessages((prev) => {
+          const byId = new Map(prev.map((m) => [m.id, m]))
+          for (const row of data) {
+            if (!byId.has(row.id)) added = true
+            byId.set(row.id, rowToMessage(row))
+          }
+          return added ? [...byId.values()].sort((x, y) => x.ts - y.ts) : prev
+        })
+        // Messages the socket should have delivered arrived by query
+        // instead, so the socket is not doing its job. Rebuild it.
+        if (added) reconnectRealtime(supabase)
+      } catch {
+        /* offline; the next tick tries again */
+      } finally {
+        running = false
+      }
+    }
+
+    const timer = setInterval(catchUp, CATCH_UP_MS)
+    const stop = onResume(() => {
+      reconnectRealtime(supabase, { force: true })
+      catchUp()
+    })
+    return () => {
+      clearInterval(timer)
+      stop()
+    }
+  }, [settings, profile, conversationId])
 
   const send = useCallback(
     async (text, attachment = null) => {

@@ -92,8 +92,8 @@ revoke all on function public.admin_create_account(text, text) from public, anon
 -- ---------------------------------------------------------------------------
 -- MAKE YOUR ACCOUNTS — edit the usernames and passwords, then run.
 -- ---------------------------------------------------------------------------
-select public.admin_create_account('usama',  'change-this-password');
-select public.admin_create_account('bisma',  'change-this-password');
+select public.admin_create_account('firstuser',  'change-this-password');
+select public.admin_create_account('seconduser', 'change-this-password');
 
 -- Check they exist:
 select p.username, u.email, u.email_confirmed_at is not null as confirmed
@@ -104,9 +104,9 @@ order by p.username;
 -- ---------------------------------------------------------------------------
 -- Delete an account (username, auth row and messages all go):
 --   delete from auth.users
---   where id = (select id from public.profiles where username = 'usama');
+--   where id = (select id from public.profiles where username = 'firstuser');
 --
 -- Change a password:
 --   update auth.users set encrypted_password = crypt('new-password', gen_salt('bf'))
---   where id = (select id from public.profiles where username = 'usama');
+--   where id = (select id from public.profiles where username = 'firstuser');
 -- ---------------------------------------------------------------------------

@@ -94,6 +94,16 @@ exception
   when duplicate_object then null;
 end $$;
 
+-- The inbox also watches this table, so that being added to a new
+-- conversation shows up without a restart.
+alter table public.conversation_members replica identity full;
+do $$
+begin
+  alter publication supabase_realtime add table public.conversation_members;
+exception
+  when duplicate_object then null;
+end $$;
+
 -- ---------------------------------------------------------------------------
 -- Membership check as SECURITY DEFINER.
 -- A policy on conversation_members that queries conversation_members recurses

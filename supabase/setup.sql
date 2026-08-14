@@ -63,6 +63,14 @@ exception
   when duplicate_object then null;
 end $$;
 
+alter table public.conversation_members replica identity full;
+do $$
+begin
+  alter publication supabase_realtime add table public.conversation_members;
+exception
+  when duplicate_object then null;
+end $$;
+
 create or replace function public.is_member(conv uuid)
 returns boolean
 language sql

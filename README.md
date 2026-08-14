@@ -109,12 +109,42 @@ language.
 
 Reports export as JSON and the last 12 are kept on the device.
 
+## Staying in sync
+
+Messages ride a Supabase realtime socket, which delivers in milliseconds when
+it is healthy. It often is not: a phone suspends the WebView the moment you
+switch apps or lock the screen, and the socket dies with it — frequently
+*without* reporting an error, so the channel sits in `SUBSCRIBED` while nothing
+arrives. That is what leaves a chat showing a message from ten minutes ago.
+
+So nothing trusts the socket to be honest about itself. Underneath it:
+
+- Both the inbox and the open conversation re-check on a timer, asking only for
+  rows newer than the newest one held. One indexed lookup, usually zero rows.
+- Every resume — app foregrounded, network back — forces a re-check *and*
+  tears the socket down so it has to rebuild. After a suspend, supabase-js
+  frequently believes it is still connected.
+- The catch-up query overlaps its window by 30 seconds. `created_at` is stamped
+  by the sender, two phones do not agree on the time, and without the overlap a
+  message from a slow clock could land below the mark and never be asked for.
+  Rows are keyed by id, so re-reading one is free.
+- If the query finds messages the socket should have delivered, the socket gets
+  rebuilt on the spot.
+
+A query that returns at all proves there is a working connection, so the
+"reconnecting" banner clears even when the socket is still sulking.
+
 ## Notifications
 
-New messages raise a notification the moment the row arrives over the realtime
-socket — no polling, no server round trip beyond the message itself. Tapping one
-opens that conversation. Nothing fires for your own messages, or for a thread
-you already have open.
+A new message raises a notification whichever path finds it first — socket or
+catch-up — and both routes share a seen-set so nothing is announced twice.
+Tapping one opens that conversation. Nothing fires for your own messages, or
+for a thread you already have open. One notification per thread: a burst
+replaces rather than stacks.
+
+The permission prompt at login is easy to miss, so the gear menu carries a
+**Turn on notifications** row that asks again, sends a test, and tells you
+plainly when Android has blocked them.
 
 These are Capacitor local notifications, so they need the app process to be
 alive: foreground and backgrounded both work, fully swiped-away does not.
