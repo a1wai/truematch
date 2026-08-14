@@ -174,7 +174,19 @@ function friendlyAuthError(message = '') {
   if (m.includes('email address') && m.includes('invalid')) {
     return 'That username cannot be used — try letters, numbers, dots or underscores'
   }
-  if (m.includes('rate limit') || m.includes('too many')) return 'Too many attempts — wait a minute'
+  // The built-in mailer allows only a couple of sends per hour. Hitting that
+  // limit means confirmation emails are still being sent — i.e. "Confirm email"
+  // was never switched off. Saying "too many attempts" hides the real cause.
+  if (
+    m.includes('email rate limit') ||
+    m.includes('over_email_send_rate_limit') ||
+    (m.includes('rate limit') && m.includes('email'))
+  ) {
+    return 'Sign-ups are still trying to send a confirmation email. Turn OFF Authentication → Sign In / Providers → Email → "Confirm email", then wait a minute and try again.'
+  }
+  if (m.includes('rate limit') || m.includes('too many')) {
+    return 'Too many attempts — wait a minute. If this keeps happening, check that "Confirm email" is switched off in Supabase.'
+  }
   if (m.includes('database error') || m.includes('unexpected_failure')) {
     return 'The database is not set up yet. Run supabase/schema.sql in the Supabase SQL editor, then try again.'
   }
