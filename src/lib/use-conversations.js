@@ -72,6 +72,8 @@ export function useConversations({ settings, profile, activeConversationId }) {
   // opening the app is not news.
   const seenRef = useRef(new Set())
   const primedRef = useRef(false)
+  // Newest created_at across all threads, so the poll query stays narrow.
+  const highWaterRef = useRef(null)
   useEffect(() => {
     activeRef.current = activeConversationId
   }, [activeConversationId])
@@ -144,6 +146,9 @@ export function useConversations({ settings, profile, activeConversationId }) {
           }
         }
         seenRef.current.add(row.id)
+        if (!highWaterRef.current || row.created_at > highWaterRef.current) {
+          highWaterRef.current = row.created_at
+        }
       }
       // Keep the set from growing without bound over a long session.
       if (seenRef.current.size > 4000) {
@@ -198,6 +203,7 @@ export function useConversations({ settings, profile, activeConversationId }) {
   useEffect(() => {
     seenRef.current = new Set()
     primedRef.current = false
+    highWaterRef.current = null
   }, [profile?.id])
 
   useEffect(() => {
@@ -216,6 +222,9 @@ export function useConversations({ settings, profile, activeConversationId }) {
       // the same message.
       const alreadySeen = seenRef.current.has(row.id)
       seenRef.current.add(row.id)
+      if (row.created_at && (!highWaterRef.current || row.created_at > highWaterRef.current)) {
+        highWaterRef.current = row.created_at
+      }
 
       // Something we have never seen — a new conversation, or a first
       // message from someone whose profile is not cached. Go and fetch.
@@ -262,19 +271,101 @@ export function useConversations({ settings, profile, activeConversationId }) {
     }
   }, [settings, profile, refresh])
 
-  /* The floor under the socket: re-check on a timer and on every resume. */
+  /* ------------------------------------------------------------------
+     The floor under the socket.
+
+     One narrow query — rows newer than the newest we hold — rather than
+     rebuilding the whole inbox every few seconds. It almost always comes
+     back empty, and when it does not the rows are folded in through the
+     same path a socket payload would take. A full refresh is only worth
+     it when something turns up from a conversation the list has never
+     seen.
+     ------------------------------------------------------------------ */
   useEffect(() => {
     const supabase = getClient(settings)
     if (!supabase || !profile) return undefined
 
-    const tick = () => {
+    let running = false
+    const catchUp = async () => {
+      if (running) return
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      refresh()
+      const ids = [...knownRef.current]
+      if (!ids.length) return
+      running = true
+      try {
+        let query = supabase
+          .from('messages')
+          .select('id, conversation_id, sender, body, attachment, status, created_at')
+          .in('conversation_id', ids)
+          .order('created_at', { ascending: true })
+          .limit(100)
+        if (highWaterRef.current) {
+          // Overlap by half a minute; see use-chat.js for why.
+          query = query.gt(
+            'created_at',
+            new Date(Date.parse(highWaterRef.current) - 30000).toISOString(),
+          )
+        }
+        const { data, error: pollError } = await query
+        if (pollError || !data?.length) return
+
+        const unseen = data.filter((row) => !seenRef.current.has(row.id))
+        for (const row of data) {
+          seenRef.current.add(row.id)
+          if (!highWaterRef.current || row.created_at > highWaterRef.current) {
+            highWaterRef.current = row.created_at
+          }
+        }
+        if (!unseen.length) return
+
+        // Anything from an unknown thread needs the full picture.
+        if (unseen.some((row) => !knownRef.current.has(row.conversation_id))) {
+          await refresh()
+          return
+        }
+
+        for (const row of unseen) {
+          setConversations((prev) =>
+            applyIncoming(prev, row, {
+              meId: profile.id,
+              activeId: activeRef.current,
+              eventType: 'INSERT',
+            }),
+          )
+        }
+
+        // One notification per thread, for the newest message in it.
+        const newestByConversation = new Map()
+        for (const row of unseen) {
+          if (row.sender === profile.id) continue
+          const held = newestByConversation.get(row.conversation_id)
+          if (!held || row.created_at > held.created_at) {
+            newestByConversation.set(row.conversation_id, row)
+          }
+        }
+        for (const [convId, row] of newestByConversation) {
+          const sender = profilesRef.current.get(row.sender)
+          notifyMessage({
+            title: sender ? `@${sender.username}` : 'New message',
+            body: row.body,
+            conversationId: convId,
+            suppress: activeRef.current === convId && isAppActive(),
+          })
+        }
+
+        // The socket should have brought these. Make it rebuild.
+        reconnectRealtime(supabase)
+      } catch {
+        /* offline; the next tick tries again */
+      } finally {
+        running = false
+      }
     }
-    const timer = setInterval(tick, POLL_MS)
+
+    const timer = setInterval(catchUp, POLL_MS)
     const stop = onResume(() => {
       reconnectRealtime(supabase)
-      refresh()
+      catchUp()
     })
     return () => {
       clearInterval(timer)
