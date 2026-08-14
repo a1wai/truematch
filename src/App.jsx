@@ -274,6 +274,8 @@ export default function App() {
         onSignIn={session.signIn}
         onSignUp={session.signUp}
         configError={session.error}
+        settings={settings}
+        onSettingsChange={setSettings}
       />
     )
   }

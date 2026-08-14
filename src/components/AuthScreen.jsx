@@ -3,6 +3,7 @@ import { motion } from 'framer-motion'
 import { AtSign, Eye, EyeOff, Heart, Loader2, Lock, TriangleAlert } from 'lucide-react'
 import { validatePassword, validateUsername } from '../lib/auth.js'
 import { cn } from '../lib/utils.js'
+import ConnectionPanel from './ConnectionPanel.jsx'
 
 /**
  * Username + password only. No email, no demo accounts, no recovery link —
@@ -12,7 +13,14 @@ import { cn } from '../lib/utils.js'
  * Fixed height with its own inner scroll so the keyboard opening on a small
  * phone never scrolls the whole app.
  */
-export default function AuthScreen({ mode: initialMode = 'login', onSignIn, onSignUp, configError }) {
+export default function AuthScreen({
+  mode: initialMode = 'login',
+  onSignIn,
+  onSignUp,
+  configError,
+  settings,
+  onSettingsChange,
+}) {
   const [mode, setMode] = useState(initialMode)
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -158,6 +166,8 @@ export default function AuthScreen({ mode: initialMode = 'login', onSignIn, onSi
                 : 'Forgot your password? There is no self-service reset. Contact the team.'}
             </p>
           </motion.div>
+
+          <ConnectionPanel settings={settings} onChange={onSettingsChange} />
         </div>
       </div>
     </div>

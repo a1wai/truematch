@@ -148,6 +148,96 @@ begin
 end;
 $$;
 
+
+-- ---------------------------------------------------------------------------
+-- Sign-up, done in the database.
+--
+-- Supabase Auth is built around email: it wants to send confirmation mail, and
+-- it can be switched off entirely by two different dashboard toggles. This app
+-- has usernames and no inboxes, so sign-up creates the auth row here instead
+-- and marks it confirmed. Login still goes through Supabase Auth normally, so
+-- password hashing, JWTs and refresh tokens are unchanged.
+--
+-- TRADE-OFF: anyone holding the anon key can call this, exactly like any public
+-- sign-up form, and there is no rate limiting in front of it. Fine for a beta.
+-- To close it later, revoke execute from anon and create accounts with
+-- supabase/create-account.sql instead.
+-- ---------------------------------------------------------------------------
+create or replace function public.create_account(p_username text, p_password text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, auth, extensions
+as $$
+declare
+  uid             uuid := gen_random_uuid();
+  uname           text := lower(trim(p_username));
+  addr            text;
+  has_provider_id boolean;
+begin
+  if uname !~ '^[a-z0-9_.]{3,20}$' then
+    raise exception 'Username must be 3-20 characters: a-z, 0-9, dot or underscore';
+  end if;
+  if p_password is null or length(p_password) < 6 then
+    raise exception 'Password must be at least 6 characters';
+  end if;
+  if exists (select 1 from public.profiles where lower(username) = uname) then
+    raise exception 'That username is taken';
+  end if;
+
+  addr := uname || '@truematch.app';
+  if exists (select 1 from auth.users where email = addr) then
+    raise exception 'That username is taken';
+  end if;
+
+  insert into auth.users (
+    instance_id, id, aud, role, email, encrypted_password,
+    email_confirmed_at, created_at, updated_at,
+    raw_app_meta_data, raw_user_meta_data,
+    confirmation_token, recovery_token, email_change_token_new, email_change
+  ) values (
+    '00000000-0000-0000-0000-000000000000', uid, 'authenticated', 'authenticated',
+    addr, crypt(p_password, gen_salt('bf')),
+    now(), now(), now(),
+    '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb,
+    '', '', '', ''
+  );
+
+  -- GoTrue refuses a password login without a matching identity row, and
+  -- Supabase versions disagree about whether provider_id exists.
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'auth' and table_name = 'identities'
+      and column_name = 'provider_id'
+  ) into has_provider_id;
+
+  if has_provider_id then
+    execute format(
+      'insert into auth.identities
+         (id, user_id, identity_data, provider, provider_id,
+          last_sign_in_at, created_at, updated_at)
+       values (%L, %L, %L, %L, %L, now(), now(), now())',
+      gen_random_uuid(), uid,
+      json_build_object('sub', uid::text, 'email', addr)::text, 'email', uid::text
+    );
+  else
+    execute format(
+      'insert into auth.identities
+         (id, user_id, identity_data, provider,
+          last_sign_in_at, created_at, updated_at)
+       values (%L, %L, %L, %L, now(), now(), now())',
+      gen_random_uuid(), uid,
+      json_build_object('sub', uid::text, 'email', addr)::text, 'email'
+    );
+  end if;
+
+  insert into public.profiles (id, username) values (uid, uname);
+  return uid;
+end;
+$$;
+
+grant execute on function public.create_account(text, text) to anon, authenticated;
+
 -- ---------------------------------------------------------------------------
 -- Row level security
 -- ---------------------------------------------------------------------------
